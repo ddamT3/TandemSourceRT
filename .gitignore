@@ -1,0 +1,75 @@
+# ===== Gradle / Android build =====
+.gradle/
+build/
+*/build/
+
+# ===== Local configuration / secrets =====
+local.properties
+secrets.properties
+credentials.properties
+*.properties.local
+
+# ===== Signing keys =====
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# ===== Android Studio / IntelliJ =====
+.idea/
+*.iml
+
+# ===== Android generated files =====
+captures/
+.externalNativeBuild/
+.cxx/
+profiling/
+obj/
+libs/
+*.apk
+*.aab
+*.apks
+
+# ===== Python generated files =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ===== Logs / temporary diagnostics =====
+*.log
+logcat*.txt
+grep*.txt
+diff.txt
+security_grep*.txt
+
+# ===== Tandem dumps / exported data =====
+Dump/
+data/
+backend/data/
+*.bin
+*.csv
+*.jsonl
+full_pumpevents_*
+pumpevents.*
+
+# ===== Temporary files =====
+*.tmp
+*.temp
+*.bak
+*.zip
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== Kotlin =====
+*.kotlin_module
+
+# ===== Test outputs =====
+test-results/
+androidTest-results/
+
+# ===== Firebase / Google config, if added later =====
+google-services.json
