@@ -4,40 +4,40 @@ Android application for downloading, decoding and visualizing Tandem t:slim X2 p
 
 ## Features
 
-- Tandem t:connect authentication
-- Cloud data download
-- Multi-pump account support
-- Automatic history merge across multiple pumps
-- Interactive glucose dashboard
-- Daily history navigation
-- Pump events visualization
-- Embedded Python decoder
-- Pump event blob export
-- Automatic build numbering
+* Tandem t:connect authentication
+* Cloud data download
+* Multi-pump account support
+* Automatic history merge across multiple pumps
+* Interactive glucose dashboard
+* Daily history navigation
+* Pump events visualization
+* Embedded Python decoder
+* Pump event blob export
+* Automatic build numbering
 
 ## Displayed Data
 
-- CGM
-- IOB
-- Basal
-- Bolus
-- Carbohydrates
-- Pump Events
-- Sensor Events
+* CGM
+* IOB
+* Basal
+* Bolus
+* Carbohydrates
+* Pump Events
+* Sensor Events
 
 ## Architecture
 
 ### Android
 
-- Kotlin
-- Jetpack Compose
-- Material 3
+* Kotlin
+* Jetpack Compose
+* Material 3
 
 ### Embedded Python
 
-- Chaquopy
-- requests
-- Custom Tandem decoder
+* Chaquopy
+* requests
+* Custom Tandem decoder
 
 ## Data Flow
 
@@ -63,6 +63,8 @@ UI Rendering
 
 ## Build
 
+### Standard Release Build
+
 From PowerShell:
 
 ```powershell
@@ -71,33 +73,105 @@ From PowerShell:
 
 The build script:
 
-- increments versionCode automatically
-- builds the Debug APK
-- creates a Git commit automatically
+* increments `versionCode`
+* generates the APK
+* creates a Git commit
+* creates a versioned APK filename
 
 Example:
 
 ```text
-v01.01.001
-v01.01.002
-v01.01.003
+v01.01.009
+v01.01.010
+v01.01.011
+```
+
+### Development Build
+
+To build without changing the version:
+
+```powershell
+.\buildAPK.bat -noincr
+```
+
+This mode:
+
+* does not modify `app/build.gradle.kts`
+* does not increment `versionCode`
+* does not create a Git commit
+* generates a versioned APK using the current version
+
+Example output:
+
+```text
+TandemSourceRT-v01.01.009.apk
+```
+
+## Android SDK Setup
+
+The build script automatically creates `local.properties` when possible.
+
+The following locations are checked:
+
+Windows:
+
+```text
+%LOCALAPPDATA%\Android\Sdk
+```
+
+or:
+
+```text
+ANDROID_HOME
+```
+
+If automatic detection fails, create `local.properties` manually:
+
+```properties
+sdk.dir=C:\Users\YOUR_USERNAME\AppData\Local\Android\Sdk
+```
+
+The `local.properties` file is intentionally excluded from Git and must remain local to each machine.
+
+## GitHub Releases
+
+APK files are not stored in the Git repository.
+
+Official APK distribution is performed through GitHub Releases.
+
+Release workflow:
+
+```text
+1. Run buildAPK.bat
+2. Push main branch
+3. Create version tag
+4. Push tag
+5. Create GitHub Release
+6. Upload versioned APK
+```
+
+Example:
+
+```text
+Tag: v01.01.009
+APK: TandemSourceRT-v01.01.009.apk
 ```
 
 ## Requirements
 
-- Android Studio
-- JDK 17+
-- Python 3.x
-- Gradle Wrapper (included)
+* Android Studio
+* JDK 17+
+* Python 3.x
+* Gradle Wrapper (included)
 
 ## Current Status
 
 Stable version with:
 
-- multi-pump support
-- automatic dataset merge
-- gap-aware chart rendering
-- automated build workflow
+* multi-pump support
+* automatic dataset merge
+* gap-aware chart rendering
+* automated build workflow
 
 ## Disclaimer
 
