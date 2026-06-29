@@ -142,29 +142,38 @@ def login_with_context(session: requests.Session, username: str, password: str):
 	)
 
 
-def get_authorize_redirect(session: requests.Session):
-	pkce = build_pkce_values()
+def continue_authorize_flow(session: requests.Session, authorize_location: str):
+	"""Continue the original OAuth/PKCE flow after a successful login.
 
-	params = {
-		"client_id": CLIENT_ID,
-		"redirect_uri": REDIRECT_URI,
-		"response_mode": "query",
-		"response_type": "code",
-		"scope": "openid email profile tandem.devices.assign",
-		"code_challenge": pkce["code_challenge"],
-		"code_challenge_method": "S256",
-		"nonce": pkce["nonce"],
-		"state": pkce["state"],
-	}
+	The first /connect/authorize call redirects to the Tandem SSO React portal,
+	with the real OAuth continuation URL encoded in the ReturnUrl query
+	parameter. After login succeeds, requests must call that ReturnUrl directly;
+	loading the SSO portal URL only returns the JavaScript application page and
+	does not produce the OAuth authorization code.
+	"""
+	if not authorize_location:
+		raise RuntimeError("Authorize Location mancante dopo start_authorize_flow")
 
-	url = f"{ACCOUNTS_BASE_URL}/connect/authorize"
-	response = session.get(url, params=params, allow_redirects=False, timeout=30)
+	parsed = urlparse(authorize_location)
+	query = parse_qs(parsed.query)
+	return_url = query.get("ReturnUrl", [None])[0]
+
+	if not return_url:
+		raise RuntimeError(f"ReturnUrl mancante in authorize Location: {authorize_location}")
+
+	response = session.get(
+		return_url,
+		allow_redirects=True,
+		timeout=30,
+	)
 
 	return {
 		"status_code": response.status_code,
 		"headers": dict(response.headers),
 		"location": response.headers.get("Location"),
-		"pkce": pkce,
+		"url": response.url,
+		"body": response.text[:2000] if hasattr(response, "text") else "",
+		"return_url": return_url,
 	}
 
 
@@ -417,23 +426,43 @@ def download_pump_settings_blob(session: requests.Session, access_token: str):
 
 def _get_access_token_for_user(username: str, password: str):
 	session = requests.Session()
-
+	
 	start = start_authorize_flow(session)
 	login = login_with_context(session, username, password)
-	after = get_authorize_redirect(session)
+	after = continue_authorize_flow(session, start.get("location"))
 
-	location = after["headers"].get("Location")
+	# With allow_redirects=True, requests stores the final redirect target in
+	# response.url. Some Tandem SSO flows do not leave a Location header on the
+	# final response, so check the final URL first and fall back to Location.
+	location = after.get("url") or after.get("location")
+	if location and "code=" not in location:
+		location = after.get("location") or location
 	code_info = extract_code_from_location(location) if location else {"code": None, "state": None}
 
 	if not code_info["code"]:
+		print("[DEBUG][AUTH] start status:", start.get("status_code"))
+		print("[DEBUG][AUTH] start location:", start.get("location"))
+		print("[DEBUG][AUTH] login status:", login.status_code)
+		print("[DEBUG][AUTH] login url:", login.url)
+		print("[DEBUG][AUTH] login location:", login.headers.get("Location"))
+		print("[DEBUG][AUTH] login body head:", login.text[:2000] if hasattr(login, "text") else None)
+		print("[DEBUG][AUTH] after status:", after.get("status_code"))
+		print("[DEBUG][AUTH] after return_url:", after.get("return_url"))
+		print("[DEBUG][AUTH] after url:", after.get("url"))
+		print("[DEBUG][AUTH] after location:", after.get("location"))
+		print("[DEBUG][AUTH] after body head:", after.get("body"))
+		print("[DEBUG][AUTH] cookies:", session.cookies.get_dict())
 		raise RuntimeError(
 			"Authorization code non trovato "
-			f"(start={start['status_code']}, login={login.status_code})"
+			f"(start={start.get('status_code')}, login={login.status_code}, after={after.get('status_code')})"
 		)
+
+	if code_info.get("state") and code_info["state"] != start["pkce"]["state"]:
+		raise RuntimeError("OAuth state mismatch")
 
 	token_result = exchange_code_for_token(
 		code=code_info["code"],
-		code_verifier=after["pkce"]["code_verifier"]
+		code_verifier=start["pkce"]["code_verifier"]
 	)
 
 	access_token = token_result.get("access_token")
