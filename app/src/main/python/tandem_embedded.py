@@ -364,7 +364,12 @@ def get_pump_event_sources(session: requests.Session, access_token: str, pumper_
 
 	print(
 		"[PYTHON] pump event sources: "
-		+ ", ".join(f"{s['serialNumber']}->{s['tconnectDeviceId']}" for s in sources)
+		+ ", ".join(
+			f"{s['serialNumber']}->{s['tconnectDeviceId']} "
+			f"min={s.get('minDateWithEvents')} max={s.get('maxDateWithEvents')} "
+			f"lastUpload={s.get('lastUpload')}"
+			for s in sources
+		)
 	)
 	return sources
 
@@ -386,11 +391,17 @@ def download_pump_events_blob(session: requests.Session, access_token: str, pump
 	}
 
 	response = session.get(url, params=params, headers=_auth_headers(access_token), timeout=60)
+
+	body_len = len(response.text or "")
+	print(
+		f"[PYTHON] pumpevents response "
+		f"device={tconnect_device_id} status={response.status_code} body_chars={body_len}"
+	)
+
 	if response.status_code != 200:
 		raise RuntimeError(f"Errore pumpevents: {response.status_code} {response.text[:500]}")
 
 	return response.text
-
 
 
 def download_full_pump_events_blob(session: requests.Session, access_token: str, pumper_id: str, tconnect_device_id: str, selected_date: str = None):

@@ -15,7 +15,7 @@ android {
 		applicationId = "com.example.tandemapp.st"
 		minSdk = 29
 		targetSdk = 35
-		versionCode = 10
+		versionCode = 11
 		versionName = "01.01"
 
 		ndk {
@@ -76,6 +76,7 @@ dependencies {
 
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 }
+
 
 
 
