@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class CgmPoint(
 	val time: String,
-	val value: Int
+	val value: Int,
+	val is_recovered: Boolean = false
 )
 
 @Serializable

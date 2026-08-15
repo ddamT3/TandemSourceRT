@@ -272,7 +272,7 @@ fun AppRoot(vm: HomeViewModel) {
 						}
 
 						val selectedDate = vm.state.value.anchorDate
-						calendarExportMessage = "Download .bin events in corso..."
+						calendarExportMessage = "Download .json event in corso..."
 						calendarExportMessage = apiRepo.exportPumpEventsBin(email, password, selectedDate)
 					}
 				}

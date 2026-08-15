@@ -48,7 +48,7 @@ fun GlucoseChart(
 ) {
 	val parsedPoints = points.mapNotNull {
 		val t = parseChartTime(it.time) ?: return@mapNotNull null
-		ParsedCgmPoint(t, it.value.toFloat())
+		ParsedCgmPoint(t, it.value.toFloat(), it.is_recovered)
 	}.sortedBy { it.time.toInstant() }
 
 	val parsedBolus = bolusEvents.mapNotNull {
@@ -58,7 +58,7 @@ fun GlucoseChart(
 			value = it.insulin_delivered_u.toFloat(),
 			bolusType = it.bolus_type,
 			bgMgdl = it.bg_mgdl?.toFloat(),
-			carbsGrams = it.carbs_g?.toFloat(),
+			carbsGrams = it.carbs_g.toFloat(),
 			isExtended = it.is_extended ?: false,
 			immediateInsulin = it.immediate_insulin_u?.toFloat(),
 			extendedInsulin = it.extended_insulin_u?.toFloat(),
@@ -139,17 +139,14 @@ fun GlucoseChart(
 	val iobFillColor = Color(0x33B08968)
 	val iobPointColor = Color(0xFFB08968)
 	val bolusBlue = Color(0xFF1565C0)
+	val recoveredCgmGray = Color(0xFF757575)
 
 	val topDayBarColorA = Color(0xFFDCEBFF)
 	val topDayBarColorB = Color(0xFFFFE9D6)
 	val topDayBorderColor = Color(0xFFB0B0B0)
 	val midnightLineColor = Color(0xFF555555)
 	val centerGuideColor = Color(0xFFFF2D2D)
-	val panelBorderColor = Color(0xFF6F6F6F)
-
 	val eventLineColor = Color(0xFF0D47A1)
-	val eventFillColor = Color(0x552965D8)
-	val eventStrokeColor = Color(0xFF1A237E)
 
 	fun cgmColor(value: Float): Color = when {
 		value < 70f -> Color(0xFFE53935)
@@ -352,14 +349,6 @@ fun GlucoseChart(
 			isAntiAlias = true
 		}
 
-		val statusBadgePaint = Paint().apply {
-			color = eventLineColor.toArgbInt()
-			textAlign = Paint.Align.CENTER
-			textSize = GlucoseChartLayout.fontEvent
-			isAntiAlias = true
-			isFakeBoldText = true
-		}
-
 		val sectionLabelPaint = Paint().apply {
 			color = android.graphics.Color.DKGRAY
 			textAlign = Paint.Align.LEFT
@@ -492,7 +481,6 @@ fun GlucoseChart(
 			val x1 = xFor(p1.time)
 			val y1 = cgmY(p1.value)
 			val color = cgmColor(p1.value)
-			drawCircle(color, 1.8f, Offset(x1, y1))
 
 			if (Duration.between(p1.time, p2.time).seconds <= maxCgmGapSeconds) {
 				val x2 = xFor(p2.time)
@@ -501,8 +489,9 @@ fun GlucoseChart(
 			}
 		}
 
-		visiblePoints.lastOrNull()?.also {
-			drawCircle(cgmColor(it.value), 1.8f, Offset(xFor(it.time), cgmY(it.value)))
+		visiblePoints.forEach {
+			val pointColor = if (it.isRecovered) recoveredCgmGray else cgmColor(it.value)
+			drawCircle(pointColor, 1.8f, Offset(xFor(it.time), cgmY(it.value)))
 		}
 
 		val cgmScaleLeftX = chartLeft - 6f
@@ -960,7 +949,11 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiamond(
 	drawPath(path, color = fillColor, style = Fill)
 }
 
-private data class ParsedCgmPoint(val time: OffsetDateTime, val value: Float)
+private data class ParsedCgmPoint(
+	val time: OffsetDateTime,
+	val value: Float,
+	val isRecovered: Boolean
+)
 
 private data class ParsedBolusEvent(
 	val time: OffsetDateTime,

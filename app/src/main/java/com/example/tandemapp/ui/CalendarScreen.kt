@@ -288,7 +288,7 @@ fun CalendarScreen(
 				)
 
 				Text(
-					text = "Scarica un nuovo blob eventi completo nella cartella Download/TandemSourceRT.",
+					text = "Scarica gli eventi completi in formato JSON nella cartella Download/TandemSourceRT.",
 					style = MaterialTheme.typography.bodySmall
 				)
 
@@ -296,7 +296,7 @@ fun CalendarScreen(
 					onClick = onExportPumpEventsBin,
 					modifier = Modifier.fillMaxWidth()
 				) {
-					Text("Download .bin events")
+					Text("Download .json event")
 				}
 
 				if (!exportMessage.isNullOrBlank()) {

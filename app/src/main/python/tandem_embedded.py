@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 
 from decoder_adapter import decode_blob_to_dataset
+from bff_adapter import decode_bff_payload
 
 
 SOURCE_BASE_URL = "https://source.eu.tandemdiabetes.com"
@@ -1017,10 +1018,7 @@ def _app_download_dir(app_files_dir: str) -> str:
 def decode_pump_events_blob(payload):
 	"""Normalize current JSON BFF payload or decode a legacy base64 blob."""
 	if isinstance(payload, dict):
-		return {
-			"events": payload.get("events") or [],
-			"clockChanges": payload.get("clockChanges") or [],
-		}
+		return decode_bff_payload(payload)
 
 	if not isinstance(payload, str):
 		raise RuntimeError(

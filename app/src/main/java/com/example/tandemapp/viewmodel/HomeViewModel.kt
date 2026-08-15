@@ -231,7 +231,7 @@ class HomeViewModel(
 					SnapshotField.EVENT -> navigateDistinct(
 						pairs = dataset.deviceStates.mapNotNull { event ->
 							parseChartTime(event.time)?.let { time ->
-								mapEventValue(event.eventLabel, event.eventType, event.CurrentUserMode, event.PumpControlState)?.let { value ->
+								mapEventValue(event.eventType, event.CurrentUserMode, event.PumpControlState)?.let { value ->
 									time to value
 								}
 							}
@@ -422,7 +422,7 @@ class HomeViewModel(
 		}
 	}
 
-	private fun mapEventValue(eventLabel: String?, eventType: String?, currentUserMode: String?, pumpControlState: String?): String? {
+	private fun mapEventValue(eventType: String?, currentUserMode: String?, pumpControlState: String?): String? {
 		return when {
 			eventType.equals("pump_suspended", true) -> "Stop"
 			eventType.equals("pump_resumed", true) -> "Restart"
