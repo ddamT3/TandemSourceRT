@@ -17,6 +17,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.time.LocalDate
 
+sealed interface LiveHistoryResult {
+	data class Success(val dataset: DayDataset) : LiveHistoryResult
+	data class AuthenticationFailure(val message: String?) : LiveHistoryResult
+	data class DataFailure(val message: String?) : LiveHistoryResult
+}
+
 class EmbeddedTandemRepository(
 	private val context: Context
 ) {
@@ -28,16 +34,28 @@ class EmbeddedTandemRepository(
 	}
 
 
-	private fun parseDatasetResponse(responseText: String): DayDataset? {
+	private fun parseDatasetResponse(responseText: String): LiveHistoryResult {
 		val root = json.parseToJsonElement(responseText).jsonObject
 		val status = root["status"]?.jsonPrimitive?.contentOrNull
 		if (status != "ok") {
 			Log.e(tag, "Embedded decode failed: $responseText")
-			return null
+			val detail = root["detail"]?.jsonObject
+			val message = detail?.get("message")?.jsonPrimitive?.contentOrNull
+			val stage = detail?.get("stage")?.jsonPrimitive?.contentOrNull
+			return if (stage == "authentication") {
+				LiveHistoryResult.AuthenticationFailure(message)
+			} else {
+				LiveHistoryResult.DataFailure(message)
+			}
 		}
 
-		val response = json.decodeFromString(HistoryLiveResponse.serializer(), responseText)
-		return response.data.toDayDataset()
+		return try {
+			val response = json.decodeFromString(HistoryLiveResponse.serializer(), responseText)
+			LiveHistoryResult.Success(response.data.toDayDataset())
+		} catch (e: Exception) {
+			Log.e(tag, "Risposta autenticata ma dataset non valido", e)
+			LiveHistoryResult.DataFailure(e.message)
+		}
 	}
 
 	private fun ensurePythonStarted() {
@@ -46,7 +64,7 @@ class EmbeddedTandemRepository(
 		}
 	}
 
-	suspend fun loadLiveHistory(username: String, password: String, selectedDate: LocalDate? = null): DayDataset? = withContext(Dispatchers.IO) {
+	suspend fun loadLiveHistory(username: String, password: String, selectedDate: LocalDate? = null): LiveHistoryResult = withContext(Dispatchers.IO) {
 		try {
 			ensurePythonStarted()
 			val py = Python.getInstance()
@@ -60,10 +78,10 @@ class EmbeddedTandemRepository(
 			return@withContext parseDatasetResponse(responseText)
 		} catch (e: PyException) {
 			Log.e(tag, "Errore Python embedded", e)
-			return@withContext null
+			return@withContext LiveHistoryResult.DataFailure(e.message)
 		} catch (e: Exception) {
 			Log.e(tag, "Errore repository standalone", e)
-			return@withContext null
+			return@withContext LiveHistoryResult.DataFailure(e.message)
 		}
 	}
 	
@@ -84,7 +102,11 @@ class EmbeddedTandemRepository(
 			val responseText = module.callAttr("decode_test_blob", outFile.absolutePath)
 				.toJava(String::class.java)
 
-			return@withContext parseDatasetResponse(responseText)
+			return@withContext when (val result = parseDatasetResponse(responseText)) {
+				is LiveHistoryResult.Success -> result.dataset
+				is LiveHistoryResult.AuthenticationFailure,
+				is LiveHistoryResult.DataFailure -> null
+			}
 		} catch (e: PyException) {
 			Log.e(tag, "Errore Python embedded decode blob", e)
 			return@withContext null

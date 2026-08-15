@@ -33,7 +33,7 @@ fun PlaceholderScreen(
 						Locale.US,
 						"v%s.%03d",
 						BuildConfig.VERSION_NAME,
-						BuildConfig.VERSION_CODE
+						BuildConfig.VERSION_CODE % 1000
 					),
 					style = MaterialTheme.typography.titleMedium,
 					fontWeight = FontWeight.Medium

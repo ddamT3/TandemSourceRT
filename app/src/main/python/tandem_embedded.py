@@ -5,6 +5,8 @@ import os
 import re
 import secrets
 import tempfile
+import threading
+import time
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -19,6 +21,11 @@ CLIENT_ID = "1519e414-eeec-492e-8c5e-97bea4815a10"
 REDIRECT_URI = "https://source.eu.tandemdiabetes.com/authorize/callback"
 USER_AGENT = "Mozilla/5.0"
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+AUTH_EXPIRY_SKEW_SECONDS = 90
+
+
+_auth_cache = {}
+_auth_lock = threading.RLock()
 
 
 def _base64url_no_padding(data: bytes) -> str:
@@ -43,6 +50,19 @@ def _decode_jwt_payload(token: str):
 		return json.loads(_base64url_decode(parts[1]).decode("utf-8"))
 	except Exception:
 		return {}
+
+
+def _token_is_usable(access_token: str) -> bool:
+	"""Return True while a cached access token is safely before expiry."""
+	if not access_token:
+		return False
+
+	payload = _decode_jwt_payload(access_token)
+	expires_at = payload.get("exp")
+	try:
+		return float(expires_at) > time.time() + AUTH_EXPIRY_SKEW_SECONDS
+	except (TypeError, ValueError):
+		return False
 
 
 def _iter_nested_values(value):
@@ -276,77 +296,247 @@ def _extract_candidate_pumper_ids_from_token_result(token_result: dict):
 	return _unique_keep_order(candidates)
 
 
+def _collect_uuid_claims(value, path="root"):
+    """Collect UUID values together with their location in a decoded JWT."""
+    found = []
+
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            child_path = f"{path}.{key}"
+            found.extend(_collect_uuid_claims(nested, child_path))
+
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            child_path = f"{path}[{index}]"
+            found.extend(_collect_uuid_claims(nested, child_path))
+
+    elif isinstance(value, str) and UUID_RE.match(value):
+        found.append({
+            "path": path,
+            "value": value,
+        })
+
+    return found
+
+
+def _short_response_body(response, limit=300):
+	"""Return a compact, single-line response preview for diagnostics."""
+	try:
+		body = response.text or ""
+	except Exception:
+		return ""
+
+	body = re.sub(r"\s+", " ", body).strip()
+	body = re.sub(
+		r'(?i)("?(?:access_token|id_token|refresh_token|token|password|username|email)"?\s*[:=]\s*")[^"]*"',
+		r'\1[REDACTED]"',
+		body,
+	)
+	body = re.sub(
+		r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+		"[EMAIL_REDACTED]",
+		body,
+	)
+	body = re.sub(
+		r"\b[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\b",
+		"[JWT_REDACTED]",
+		body,
+	)
+	return body[:limit]
+
+
+def _safe_diagnostic_url(value):
+	"""Redact OAuth secrets from a URL before writing it to Logcat."""
+	if not value:
+		return value
+	return re.sub(
+		r"(?i)([?&](?:code|token|access_token|id_token|refresh_token)=)[^&\s]+",
+		r"\1[REDACTED]",
+		str(value),
+	)
+
+
+def _log_http_diagnostic(label, response, include_body=False):
+	"""Log routing information without tokens, cookies or request headers."""
+	body_head = _short_response_body(response) if include_body else "[OMITTED]"
+	print(
+		f"[PYTHON][HTTP] {label} "
+		f"status={response.status_code} "
+		f"final_url={_safe_diagnostic_url(response.url)} "
+		f"content_type={response.headers.get('Content-Type')} "
+		f"location={_safe_diagnostic_url(response.headers.get('Location'))} "
+        f"history={[item.status_code for item in response.history]} "
+		f"body_head={body_head}"
+    )
+
+
+def _extract_uuid_values_for_diagnostic(value):
+    entries = _collect_uuid_claims(
+        value,
+        path="pumper_response",
+    )
+
+    return _unique_keep_order(
+        [entry["value"] for entry in entries]
+    )
+
+
 def get_pumper(session: requests.Session, access_token: str, pumper_id: str):
-	url = f"{SOURCE_BASE_URL}/api/pumpers/{pumper_id}"
-	response = session.get(url, headers=_auth_headers(access_token), timeout=60)
-	if response.status_code != 200:
-		raise RuntimeError(f"Errore pumper {pumper_id}: {response.status_code} {response.text[:500]}")
-	return response.json()
+    """Return pumper information, supporting current and legacy API paths."""
+    headers = _auth_headers(access_token)
 
-def discover_pumper_id(session: requests.Session, access_token: str, token_result: dict):
-	candidates = _extract_candidate_pumper_ids_from_token_result(token_result)
+    urls = [
+        f"{SOURCE_BASE_URL}/api/pumpers/pumpers/{pumper_id}",
+        f"{SOURCE_BASE_URL}/api/pumpers/{pumper_id}",
+    ]
+
+    attempts = []
+
+    for url in urls:
+        response = session.get(
+            url,
+            headers=headers,
+            allow_redirects=True,
+            timeout=60,
+        )
+
+        _log_http_diagnostic(
+            f"pumper candidate={pumper_id}",
+            response,
+        )
+
+        attempts.append(
+            f"{response.status_code}:{response.url}"
+        )
+
+        if response.status_code == 404:
+            continue
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Errore pumper {pumper_id}: "
+                f"{response.status_code}"
+            )
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Risposta pumper non JSON: "
+                f"{exc.__class__.__name__}"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise RuntimeError(
+                f"Formato pumper inatteso: "
+                f"{type(data).__name__}"
+            )
+
+        returned_id = data.get("id")
+
+        if returned_id and returned_id != pumper_id:
+            raise RuntimeError(
+                f"Risposta relativa a un altro pumperId: "
+                f"{returned_id}"
+            )
+
+        print(
+            f"[PYTHON][DISCOVERY] "
+            f"pumper_endpoint={response.url} "
+            f"devices={len(data.get('devices') or [])}"
+        )
+
+        return data
+
+    raise RuntimeError(
+        f"Endpoint pumper non trovato per {pumper_id}. "
+        f"attempts={attempts}"
+    )
+
+def discover_pumper_id(
+	session: requests.Session,
+	access_token: str,
+	token_result: dict,
+):
+	"""Discover the pumperId from JWT claims and validate it via the current API."""
+	preferred = []
+
+	for token_name, claim_names in (
+		("id_token", ("pumperId", "pumper_id")),
+		("access_token", ("tandem_pumper_id", "pumperId", "pumper_id")),
+	):
+		token = token_result.get(token_name)
+		if not token:
+			continue
+
+		payload = _decode_jwt_payload(token)
+		for claim_name in claim_names:
+			value = payload.get(claim_name)
+			if isinstance(value, str) and UUID_RE.match(value):
+				preferred.append(value)
+				print(
+					f"[PYTHON][DISCOVERY] pumper claim "
+					f"token={token_name} claim={claim_name}"
+				)
+
+	candidates = _unique_keep_order(
+		preferred
+		+ _extract_candidate_pumper_ids_from_token_result(token_result)
+	)
+
 	errors = []
-
 	for candidate in candidates:
 		try:
-			metadata = get_pump_event_metadata(session, access_token, candidate)
-			sources = _normalize_metadata_items(metadata)
-
-			if sources:
-				print(f"[PYTHON] discovered pumperId={candidate}")
-				print(
-					"[PYTHON] validated pumpeventmetadata sources: "
-					+ ", ".join(f"{s['serialNumber']}->{s['tconnectDeviceId']}" for s in sources)
-				)
+			data = get_pumper(session, access_token, candidate)
+			if data.get("id") == candidate:
+				print(f"[PYTHON][DISCOVERY] validated_pumper_id={candidate}")
 				return candidate
-
 		except Exception as exc:
 			errors.append(f"{candidate}: {exc}")
 
 	raise RuntimeError(
-		"pumperId non trovato dinamicamente tramite pumpeventmetadata. "
-		f"candidate={candidates} errors={errors[:5]}"
+		"pumperId non trovato tramite i token e la API corrente. "
+		f"candidates={candidates} errors={errors[:8]}"
 	)
 
-def get_pump_event_metadata(session: requests.Session, access_token: str, pumper_id: str):
-	"""Return Tandem report metadata, including tconnectDeviceId per pump."""
-	url = f"{SOURCE_BASE_URL}/api/reports/reportsfacade/{pumper_id}/pumpeventmetadata"
-	response = session.get(url, headers=_auth_headers(access_token), timeout=60)
-	if response.status_code != 200:
-		raise RuntimeError(f"Errore pumpeventmetadata: {response.status_code} {response.text[:500]}")
-
-	data = response.json()
-	if isinstance(data, dict):
-		for key in ("pumpEventMetadata", "metadata", "devices", "items", "data"):
-			if isinstance(data.get(key), list):
-				return data.get(key)
-	if isinstance(data, list):
-		return data
-
-	raise RuntimeError(f"Formato pumpeventmetadata inatteso: {type(data).__name__}")
-
+def get_pump_event_metadata(
+	session: requests.Session,
+	access_token: str,
+	pumper_id: str,
+):
+	"""Compatibility wrapper returning current pump assignments."""
+	return get_pump_event_sources(session, access_token, pumper_id)
 
 def _normalize_metadata_items(metadata):
+	"""Normalize current or legacy pump source metadata."""
 	items = []
+
 	for item in metadata or []:
 		if not isinstance(item, dict):
 			continue
 
-		tconnect_device_id = item.get("tconnectDeviceId")
-		if tconnect_device_id is None:
-			tconnect_device_id = item.get("tConnectDeviceId")
-		if tconnect_device_id is None:
-			tconnect_device_id = item.get("deviceId")
-		if tconnect_device_id is None:
-			tconnect_device_id = item.get("id")
+		assignment_id = item.get("assignmentId")
+		if assignment_id is None:
+			assignment_id = item.get("deviceAssignmentId")
+		if assignment_id is None:
+			assignment_id = item.get("tconnectDeviceId")
+		if assignment_id is None:
+			assignment_id = item.get("tConnectDeviceId")
+		if assignment_id is None:
+			assignment_id = item.get("deviceId")
+		if assignment_id is None:
+			assignment_id = item.get("id")
 
-		if tconnect_device_id is None:
+		if assignment_id is None:
 			continue
 
 		items.append({
-			"tconnectDeviceId": str(tconnect_device_id),
+			"assignmentId": str(assignment_id),
+			"tconnectDeviceId": str(assignment_id),
 			"serialNumber": str(item.get("serialNumber", "unknown")),
 			"modelNumber": item.get("modelNumber"),
+			"modelName": item.get("modelName"),
+			"assignedAt": item.get("assignedAt"),
 			"minDateWithEvents": item.get("minDateWithEvents"),
 			"maxDateWithEvents": item.get("maxDateWithEvents"),
 			"lastUpload": item.get("lastUpload"),
@@ -355,79 +545,124 @@ def _normalize_metadata_items(metadata):
 
 	return items
 
+def get_pump_event_sources(
+	session: requests.Session,
+	access_token: str,
+	pumper_id: str,
+):
+	"""Return pump assignments used by the current reports BFF."""
+	pumper = get_pumper(session, access_token, pumper_id)
+	sources = _normalize_metadata_items(pumper.get("devices") or [])
 
-def get_pump_event_sources(session: requests.Session, access_token: str, pumper_id: str):
-	metadata = get_pump_event_metadata(session, access_token, pumper_id)
-	sources = _normalize_metadata_items(metadata)
 	if not sources:
-		raise RuntimeError("Nessun tconnectDeviceId trovato in pumpeventmetadata")
+		raise RuntimeError(
+			"Nessun assignmentId trovato nella risposta pumper corrente"
+		)
 
 	print(
 		"[PYTHON] pump event sources: "
 		+ ", ".join(
-			f"{s['serialNumber']}->{s['tconnectDeviceId']} "
-			f"min={s.get('minDateWithEvents')} max={s.get('maxDateWithEvents')} "
-			f"lastUpload={s.get('lastUpload')}"
-			for s in sources
+			f"{source['serialNumber']}->{source['assignmentId']} "
+			f"assignedAt={source.get('assignedAt')}"
+			for source in sources
 		)
 	)
+
 	return sources
 
-
-def download_pump_events_blob(session: requests.Session, access_token: str, pumper_id: str, tconnect_device_id: str, selected_date: str = None):
-	url = f"{SOURCE_BASE_URL}/api/reports/reportsfacade/pumpevents/{pumper_id}/{tconnect_device_id}"
-
-	min_date, max_date = _date_window_from_selected(selected_date)
-	print(
-		f"[PYTHON] download_pump_events_blob pumperId={pumper_id} "
-		f"tconnectDeviceId={tconnect_device_id} selected_date={selected_date} "
-		f"min_date={min_date} max_date={max_date}"
+def download_pump_events_blob(
+	session: requests.Session,
+	access_token: str,
+	pumper_id: str,
+	assignment_id: str,
+	selected_date: str = None,
+):
+	"""Download decoded pump events from the current reports BFF."""
+	url = (
+		f"{SOURCE_BASE_URL}/api/reports/bff/"
+		f"pump-logs/{assignment_id}"
 	)
 
+	start_date, end_date = _date_window_from_selected(selected_date)
 	params = {
-		"minDate": min_date.isoformat(),
-		"maxDate": max_date.isoformat(),
-		"eventIds": "3,11,12,20,21,33,55,64,65,66,81,229,313,399,447",
+		"pumperId": pumper_id,
+		"startDate": f"{start_date.isoformat()}T00:00:00Z",
+		"endDate": f"{end_date.isoformat()}T23:59:59Z",
+		"eventIds": "229,5,28,4,26,99,279,3,16,59,21,55,20,280,64,65,66,61,33,371,171,369,460,172,370,461,372,480,399,256,213,406,477,394,212,404,214,405,486,447,313,60,14,6,90,230,140,12,11,53,13,63,203,307,191",
 	}
 
-	response = session.get(url, params=params, headers=_auth_headers(access_token), timeout=60)
-
-	body_len = len(response.text or "")
 	print(
-		f"[PYTHON] pumpevents response "
-		f"device={tconnect_device_id} status={response.status_code} body_chars={body_len}"
+		f"[PYTHON] download_pump_events "
+		f"pumperId={pumper_id} assignmentId={assignment_id} "
+		f"selected_date={selected_date} "
+		f"startDate={params['startDate']} endDate={params['endDate']}"
+	)
+
+	response = session.get(
+		url,
+		params=params,
+		headers=_auth_headers(access_token),
+		timeout=120,
+	)
+
+	_log_http_diagnostic(
+		f"pump-logs assignment={assignment_id}",
+		response,
 	)
 
 	if response.status_code != 200:
-		raise RuntimeError(f"Errore pumpevents: {response.status_code} {response.text[:500]}")
+		raise RuntimeError(
+			f"Errore pump-logs: {response.status_code} "
+			f"{response.text[:500]}"
+		)
 
-	return response.text
+	try:
+		data = response.json()
+	except Exception as exc:
+		raise RuntimeError(
+			f"Risposta pump-logs non JSON: {exc.__class__.__name__}"
+		) from exc
 
+	if not isinstance(data, dict):
+		raise RuntimeError(
+			f"Formato pump-logs inatteso: {type(data).__name__}"
+		)
 
-def download_full_pump_events_blob(session: requests.Session, access_token: str, pumper_id: str, tconnect_device_id: str, selected_date: str = None):
-	"""Download broad pumpevents blob for reverse-engineering/debug exports."""
-	url = f"{SOURCE_BASE_URL}/api/reports/reportsfacade/pumpevents/{pumper_id}/{tconnect_device_id}"
+	events = data.get("events")
+	clock_changes = data.get("clockChanges")
 
-	min_date, max_date = _date_window_from_selected(selected_date)
+	if not isinstance(events, list):
+		raise RuntimeError("Campo events mancante nella risposta pump-logs")
+	if clock_changes is None:
+		clock_changes = []
+	if not isinstance(clock_changes, list):
+		raise RuntimeError("Campo clockChanges non valido nella risposta pump-logs")
+
 	print(
-		f"[PYTHON] download_full_pump_events_blob pumperId={pumper_id} "
-		f"tconnectDeviceId={tconnect_device_id} selected_date={selected_date} "
-		f"min_date={min_date} max_date={max_date}"
+		f"[PYTHON] pump-logs assignment={assignment_id} "
+		f"events={len(events)} clockChanges={len(clock_changes)}"
 	)
-	event_ids = ",".join(str(i) for i in range(1, 601))
 
-	params = {
-		"minDate": min_date.isoformat(),
-		"maxDate": max_date.isoformat(),
-		"eventIds": event_ids,
+	return {
+		"events": events,
+		"clockChanges": clock_changes,
 	}
 
-	response = session.get(url, params=params, headers=_auth_headers(access_token), timeout=120)
-	if response.status_code != 200:
-		raise RuntimeError(f"Errore full pumpevents: {response.status_code} {response.text[:500]}")
-
-	return response.text
-
+def download_full_pump_events_blob(
+	session: requests.Session,
+	access_token: str,
+	pumper_id: str,
+	assignment_id: str,
+	selected_date: str = None,
+):
+	"""Compatibility wrapper for the current decoded BFF response."""
+	return download_pump_events_blob(
+		session,
+		access_token,
+		pumper_id,
+		assignment_id,
+		selected_date,
+	)
 
 def download_pump_settings_blob(session: requests.Session, access_token: str):
 	"""Placeholder: insert real Tandem Source pump settings endpoint here."""
@@ -440,6 +675,17 @@ def _get_access_token_for_user(username: str, password: str):
 	
 	start = start_authorize_flow(session)
 	login = login_with_context(session, username, password)
+	_log_http_diagnostic(
+		"login",
+		login,
+		include_body=login.status_code < 200 or login.status_code >= 300,
+	)
+	if login.status_code < 200 or login.status_code >= 300:
+		raise RuntimeError(
+			"Login Tandem rifiutato "
+			f"(status={login.status_code}, "
+			f"content_type={login.headers.get('Content-Type')})"
+		)
 	after = continue_authorize_flow(session, start.get("location"))
 
 	# With allow_redirects=True, requests stores the final redirect target in
@@ -451,24 +697,17 @@ def _get_access_token_for_user(username: str, password: str):
 	code_info = extract_code_from_location(location) if location else {"code": None, "state": None}
 
 	if not code_info["code"]:
-		print("[DEBUG][AUTH] start status:", start.get("status_code"))
-		print("[DEBUG][AUTH] start location:", start.get("location"))
-		print("[DEBUG][AUTH] login status:", login.status_code)
-		print("[DEBUG][AUTH] login url:", login.url)
-		print("[DEBUG][AUTH] login location:", login.headers.get("Location"))
-		print("[DEBUG][AUTH] login body head:", login.text[:2000] if hasattr(login, "text") else None)
-		print("[DEBUG][AUTH] after status:", after.get("status_code"))
-		print("[DEBUG][AUTH] after return_url:", after.get("return_url"))
-		print("[DEBUG][AUTH] after url:", after.get("url"))
-		print("[DEBUG][AUTH] after location:", after.get("location"))
-		print("[DEBUG][AUTH] after body head:", after.get("body"))
-		print("[DEBUG][AUTH] cookies:", session.cookies.get_dict())
+		print(
+			"[PYTHON] authorization code missing "
+			f"start={start.get('status_code')} "
+			f"login={login.status_code} after={after.get('status_code')}"
+		)
 		raise RuntimeError(
 			"Authorization code non trovato "
 			f"(start={start.get('status_code')}, login={login.status_code}, after={after.get('status_code')})"
 		)
 
-	if code_info.get("state") and code_info["state"] != start["pkce"]["state"]:
+	if code_info.get("state") != start["pkce"]["state"]:
 		raise RuntimeError("OAuth state mismatch")
 
 	token_result = exchange_code_for_token(
@@ -484,9 +723,43 @@ def _get_access_token_for_user(username: str, password: str):
 
 
 def _get_authenticated_context(username: str, password: str):
-	session, access_token, token_result = _get_access_token_for_user(username, password)
-	pumper_id = discover_pumper_id(session, access_token, token_result)
-	return session, access_token, pumper_id
+	cache_key = username.strip().casefold()
+	if not cache_key:
+		raise RuntimeError("Username mancante")
+
+	with _auth_lock:
+		cached = _auth_cache.get(cache_key)
+		if cached and _token_is_usable(cached.get("access_token")):
+			print("[PYTHON] reusing authenticated Tandem session")
+			return (
+				cached["session"],
+				cached["access_token"],
+				cached["pumper_id"],
+			)
+
+		# The password is used only for this login attempt and is never cached.
+		_auth_cache.pop(cache_key, None)
+		print("[PYTHON] starting new Tandem authorization")
+		session, access_token, token_result = _get_access_token_for_user(
+			username,
+			password,
+		)
+		pumper_id = discover_pumper_id(session, access_token, token_result)
+		_auth_cache[cache_key] = {
+			"session": session,
+			"access_token": access_token,
+			"pumper_id": pumper_id,
+		}
+		return session, access_token, pumper_id
+
+
+def clear_auth_session(username: str = None):
+	"""Drop cached Tandem sessions for logout or forced reauthentication."""
+	with _auth_lock:
+		if username:
+			_auth_cache.pop(username.strip().casefold(), None)
+		else:
+			_auth_cache.clear()
 
 
 def _safe_export_dir(export_dir: str):
@@ -547,57 +820,63 @@ def _merge_datasets(datasets: list[dict]):
 	return merged
 
 
-def export_full_pump_events_bin(username: str, password: str, export_dir: str, selected_date: str = None):
-	"""Export raw pumpevents blobs as .bin, one file per Tandem source/pump.
-
-	The Android layer passes an app-specific external downloads folder.
-	"""
+def export_full_pump_events_bin(
+	username: str,
+	password: str,
+	export_dir: str,
+	selected_date: str = None,
+):
+	"""Export current BFF pump logs as JSON, one file per assignment."""
 	try:
-		session, access_token, pumper_id = _get_authenticated_context(username, password)
-		sources = get_pump_event_sources(session, access_token, pumper_id)
+		session, access_token, pumper_id = _get_authenticated_context(
+			username,
+			password,
+		)
+		sources = get_pump_event_sources(
+			session,
+			access_token,
+			pumper_id,
+		)
 
 		out_dir = _safe_export_dir(export_dir)
 		exported = []
 		timestamp = _export_timestamp()
 
 		for source in sources:
-			tconnect_device_id = source["tconnectDeviceId"]
+			assignment_id = source["assignmentId"]
 			serial_number = source["serialNumber"]
 
-			base64_blob = download_full_pump_events_blob(
+			payload = download_full_pump_events_blob(
 				session,
 				access_token,
 				pumper_id,
-				tconnect_device_id,
-				selected_date
+				assignment_id,
+				selected_date,
 			)
 
-			blob_bytes = _base64_blob_to_bytes(base64_blob)
-
 			filename = (
-				f"full_pumpevents_{selected_date or 'latest'}_"
+				f"full_pump_logs_{selected_date or 'latest'}_"
 				f"{_safe_filename_part(serial_number)}_"
-				f"{_safe_filename_part(tconnect_device_id)}_"
-				f"{timestamp}.bin"
+				f"{_safe_filename_part(assignment_id)}_"
+				f"{timestamp}.json"
 			)
 			path = os.path.join(out_dir, filename)
 
-			with open(path, "wb") as f:
-				f.write(blob_bytes)
+			with open(path, "w", encoding="utf-8") as output_file:
+				json.dump(payload, output_file, ensure_ascii=False)
 
 			exported.append({
 				"serialNumber": serial_number,
-				"tconnectDeviceId": tconnect_device_id,
+				"assignmentId": assignment_id,
 				"path": path,
-				"bytes": len(blob_bytes),
-				"minDateWithEvents": source.get("minDateWithEvents"),
-				"maxDateWithEvents": source.get("maxDateWithEvents"),
-				"lastUpload": source.get("lastUpload"),
+				"events": len(payload.get("events") or []),
+				"clockChanges": len(payload.get("clockChanges") or []),
+				"assignedAt": source.get("assignedAt"),
 			})
 
 		return json.dumps({
 			"status": "ok",
-			"type": "multi_bin",
+			"type": "multi_json",
 			"pumperId": pumper_id,
 			"count": len(exported),
 			"files": exported,
@@ -605,38 +884,46 @@ def export_full_pump_events_bin(username: str, password: str, export_dir: str, s
 	except Exception as exc:
 		return json.dumps({
 			"status": "error",
-			"type": "bin",
+			"type": "json",
 			"detail": {
 				"message": str(exc),
 				"exception": exc.__class__.__name__,
-			}
+			},
 		})
-
-
 
 def export_pump_events_bin(username: str, password: str, export_dir: str, selected_date: str = None):
 	return export_full_pump_events_bin(username, password, export_dir, selected_date)
 
 
-def export_dataset_json(username: str, password: str, export_dir: str):
-	"""Export decoded multi-pump dataset as .json."""
+def export_dataset_json(
+	username: str,
+	password: str,
+	export_dir: str,
+):
+	"""Export merged current BFF pump logs as JSON."""
 	try:
-		session, access_token, pumper_id = _get_authenticated_context(username, password)
-		sources = get_pump_event_sources(session, access_token, pumper_id)
+		session, access_token, pumper_id = _get_authenticated_context(
+			username,
+			password,
+		)
+		sources = get_pump_event_sources(
+			session,
+			access_token,
+			pumper_id,
+		)
 
 		datasets = []
 		for source in sources:
-			base64_blob = download_pump_events_blob(
+			payload = download_pump_events_blob(
 				session,
 				access_token,
 				pumper_id,
-				source["tconnectDeviceId"],
-				None
+				source["assignmentId"],
+				None,
 			)
-			datasets.append(decode_pump_events_blob(base64_blob))
+			datasets.append(decode_pump_events_blob(payload))
 
 		dataset = _merge_datasets(datasets)
-
 		out_dir = _safe_export_dir(export_dir)
 		filename = f"dataset_{_export_timestamp()}.json"
 		path = os.path.join(out_dir, filename)
@@ -646,20 +933,22 @@ def export_dataset_json(username: str, password: str, export_dir: str):
 			"pumperId": pumper_id,
 			"sources": [
 				{
-					"serialNumber": s["serialNumber"],
-					"tconnectDeviceId": s["tconnectDeviceId"],
-					"minDateWithEvents": s.get("minDateWithEvents"),
-					"maxDateWithEvents": s.get("maxDateWithEvents"),
-					"lastUpload": s.get("lastUpload"),
+					"serialNumber": source["serialNumber"],
+					"assignmentId": source["assignmentId"],
+					"assignedAt": source.get("assignedAt"),
 				}
-				for s in sources
+				for source in sources
 			],
 			"data": dataset,
-			"counts": {k: len(v) for k, v in dataset.items() if isinstance(v, list)},
+			"counts": {
+				key: len(value)
+				for key, value in dataset.items()
+				if isinstance(value, list)
+			},
 		}
 
-		with open(path, "w", encoding="utf-8") as f:
-			json.dump(payload, f, ensure_ascii=False, indent=2)
+		with open(path, "w", encoding="utf-8") as output_file:
+			json.dump(payload, output_file, ensure_ascii=False, indent=2)
 
 		return json.dumps({
 			"status": "ok",
@@ -675,9 +964,8 @@ def export_dataset_json(username: str, password: str, export_dir: str):
 			"detail": {
 				"message": str(exc),
 				"exception": exc.__class__.__name__,
-			}
+			},
 		})
-
 
 def export_pump_settings_bin(username: str, password: str, export_dir: str):
 	"""Export raw pump settings blob as .bin once endpoint is configured."""
@@ -726,8 +1014,20 @@ def _app_download_dir(app_files_dir: str) -> str:
 	return path
 
 
-def decode_pump_events_blob(base64_blob: str):
-	blob_bytes = _base64_blob_to_bytes(base64_blob)
+def decode_pump_events_blob(payload):
+	"""Normalize current JSON BFF payload or decode a legacy base64 blob."""
+	if isinstance(payload, dict):
+		return {
+			"events": payload.get("events") or [],
+			"clockChanges": payload.get("clockChanges") or [],
+		}
+
+	if not isinstance(payload, str):
+		raise RuntimeError(
+			f"Payload pump events non supportato: {type(payload).__name__}"
+		)
+
+	blob_bytes = _base64_blob_to_bytes(payload)
 
 	with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
 		tmp.write(blob_bytes)
@@ -741,61 +1041,66 @@ def decode_pump_events_blob(base64_blob: str):
 		except Exception:
 			pass
 
-
-def fetch_live_dataset(username: str, password: str, selected_date: str = None):
+def fetch_live_dataset(
+	username: str,
+	password: str,
+	selected_date: str = None,
+):
+	stage = "authentication"
 	try:
 		print(f"[PYTHON] fetch_live_dataset selected_date={selected_date}")
 
-		session, access_token, pumper_id = _get_authenticated_context(username, password)
-		sources = get_pump_event_sources(session, access_token, pumper_id)
+		session, access_token, pumper_id = _get_authenticated_context(
+			username,
+			password,
+		)
+		stage = "data"
+		sources = get_pump_event_sources(
+			session,
+			access_token,
+			pumper_id,
+		)
 
 		datasets = []
 		source_summaries = []
 
 		for source in sources:
-			tconnect_device_id = source["tconnectDeviceId"]
+			assignment_id = source["assignmentId"]
 			serial_number = source["serialNumber"]
 
-			base64_blob = download_pump_events_blob(
+			payload = download_pump_events_blob(
 				session,
 				access_token,
 				pumper_id,
-				tconnect_device_id,
-				selected_date
+				assignment_id,
+				selected_date,
 			)
+			dataset = decode_pump_events_blob(payload)
 
-			print(
-				f"[PYTHON] downloaded device={tconnect_device_id} "
-				f"serial={serial_number} base64_chars={len(base64_blob)}"
-			)
-
-			decoded_dataset = decode_pump_events_blob(base64_blob)
-			decoded_counts = {
-				k: len(v)
-				for k, v in decoded_dataset.items()
-				if isinstance(v, list)
+			counts = {
+				key: len(value)
+				for key, value in dataset.items()
+				if isinstance(value, list)
 			}
+
 			print(
-				f"[PYTHON] decoded device={tconnect_device_id} "
-				f"serial={serial_number} counts={decoded_counts}"
+				f"[PYTHON] decoded assignment={assignment_id} "
+				f"serial={serial_number} counts={counts}"
 			)
 
-			datasets.append(decoded_dataset)
+			datasets.append(dataset)
 			source_summaries.append({
 				"serialNumber": serial_number,
-				"tconnectDeviceId": tconnect_device_id,
-				"minDateWithEvents": source.get("minDateWithEvents"),
-				"maxDateWithEvents": source.get("maxDateWithEvents"),
-				"lastUpload": source.get("lastUpload"),
-				"base64Chars": len(base64_blob),
-				"counts": decoded_counts,
+				"assignmentId": assignment_id,
+				"assignedAt": source.get("assignedAt"),
+				"counts": counts,
 			})
 
 		dataset = _merge_datasets(datasets)
 		merged_counts = {
-			k: len(v)
-			for k, v in dataset.items()
-			if isinstance(v, list)
+			key: len(value)
+			for key, value in dataset.items()
+			if isinstance(value, list)
 		}
 		print(f"[PYTHON] merged counts={merged_counts}")
 
@@ -815,10 +1120,11 @@ def fetch_live_dataset(username: str, password: str, selected_date: str = None):
 			"detail": {
 				"message": str(exc),
 				"type": exc.__class__.__name__,
+				"stage": stage,
 				"traceback": err,
-			}
+			},
 		})
-	
+
 def decode_test_blob(path):
 	data = decode_blob_to_dataset(path)
 	return json.dumps({

@@ -54,6 +54,7 @@ full_pumpevents_*
 pumpevents.*
 
 # ===== Temporary files =====
+Temp/
 *.tmp
 *.temp
 *.bak

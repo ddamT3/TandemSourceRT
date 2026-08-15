@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.tandemapp.data.EmbeddedTandemRepository
+import com.example.tandemapp.data.LiveHistoryResult
 import com.example.tandemapp.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import android.content.Context
@@ -86,18 +87,23 @@ fun AppRoot(vm: HomeViewModel) {
 		if (loginRememberMe && loginEmail.isNotBlank() && loginPassword.isNotBlank()) {
 			try {
 				val today = LocalDate.now()
-				val liveData = apiRepo.loadLiveHistory(
+				val result = apiRepo.loadLiveHistory(
 					username = loginEmail,
 					password = loginPassword,
 					selectedDate = today
 				)
 
-				if (liveData != null) {
+				if (result is LiveHistoryResult.Success) {
 					vm.selectAnchorDate(today)
-					vm.setLiveData(liveData, today)
+					vm.setLiveData(result.dataset, today)
 					vm.jumpToLatest()
 					currentScreen = AppScreen.Home
 				} else {
+					loginError = when (result) {
+						is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
+						is LiveHistoryResult.DataFailure -> "Autenticazione riuscita, caricamento dati non riuscito"
+						is LiveHistoryResult.Success -> null
+					}
 					currentScreen = AppScreen.Login
 				}
 			} catch (e: Exception) {
@@ -196,16 +202,20 @@ fun AppRoot(vm: HomeViewModel) {
 
 						Log.d("CalendarDebug", "home update live dataset for ${vm.state.value.anchorDate}")
 
-						val liveData = apiRepo.loadLiveHistory(
+				val result = apiRepo.loadLiveHistory(
 							username = email,
 							password = password,
 							selectedDate = vm.state.value.anchorDate
 						)
 
-						if (liveData != null) {
-							vm.setLiveData(liveData, vm.state.value.anchorDate)
-						} else {
-							loginError = "Update fallito"
+				if (result is LiveHistoryResult.Success) {
+					vm.setLiveData(result.dataset, vm.state.value.anchorDate)
+				} else {
+					loginError = when (result) {
+						is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
+						is LiveHistoryResult.DataFailure -> "Autenticazione riuscita, aggiornamento dati fallito"
+						is LiveHistoryResult.Success -> null
+					}
 						}
 					}
 				}
@@ -228,17 +238,21 @@ fun AppRoot(vm: HomeViewModel) {
 
 						Log.d("CalendarDebug", "loading live dataset for $selectedDate")
 
-						val liveData = apiRepo.loadLiveHistory(
+						val result = apiRepo.loadLiveHistory(
 							username = email,
 							password = password,
 							selectedDate = selectedDate
 						)
 
-						if (liveData != null) {
-							vm.setLiveData(liveData, selectedDate)
+						if (result is LiveHistoryResult.Success) {
+							vm.setLiveData(result.dataset, selectedDate)
 							currentScreen = AppScreen.Home
 						} else {
-							loginError = "Caricamento dati per $selectedDate fallito"
+							loginError = when (result) {
+								is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
+								is LiveHistoryResult.DataFailure -> "Autenticazione riuscita, caricamento dati per $selectedDate fallito"
+								is LiveHistoryResult.Success -> null
+							}
 							currentScreen = AppScreen.Home
 						}
 					}
@@ -340,17 +354,21 @@ fun AppRoot(vm: HomeViewModel) {
 					}
 
 					scope.launch {
-						val liveData = apiRepo.loadLiveHistory(
+						val result = apiRepo.loadLiveHistory(
 							username = email,
 							password = password,
 							selectedDate = vm.state.value.anchorDate
 						)
 
-						if (liveData != null) {
-							vm.setLiveData(liveData, vm.state.value.anchorDate)
+						if (result is LiveHistoryResult.Success) {
+							vm.setLiveData(result.dataset, vm.state.value.anchorDate)
 							currentScreen = AppScreen.Home
 						} else {
-							loginError = "Login Tandem o caricamento dati non riuscito"
+							loginError = when (result) {
+								is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
+								is LiveHistoryResult.DataFailure -> "Autenticazione riuscita, caricamento dati non riuscito"
+								is LiveHistoryResult.Success -> null
+							}
 						}
 					}
 				},

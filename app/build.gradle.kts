@@ -7,6 +7,24 @@ plugins {
 	kotlin("plugin.serialization") version "1.9.24"
 }
 
+// Versione release letta da buildAPK.bat. I nomi delle due variabili sono
+// intenzionalmente compatibili con le espressioni regolari dello script.
+val release_versionName = "01.02"
+val release_versionCode = 0
+
+val releaseVersionParts = release_versionName.split(".")
+require(releaseVersionParts.size == 2) { "versionName deve usare il formato MM.mm" }
+
+val releaseMajor = releaseVersionParts[0].toInt()
+val releaseMinor = releaseVersionParts[1].toInt()
+require(releaseMajor in 0..21474) { "Major version fuori intervallo" }
+require(releaseMinor in 0..99) { "Minor version fuori intervallo 00..99" }
+require(release_versionCode in 0..999) { "Revisione fuori intervallo 000..999" }
+
+val androidVersionCode =
+	releaseMajor * 100_000 + releaseMinor * 1_000 + release_versionCode
+require(androidVersionCode > 0) { "Android versionCode deve essere positivo" }
+
 android {
 	namespace = "com.example.tandemapp.st"
 	compileSdk = 35
@@ -15,8 +33,8 @@ android {
 		applicationId = "com.example.tandemapp.st"
 		minSdk = 29
 		targetSdk = 35
-		versionCode = 11
-		versionName = "01.01"
+		versionCode = androidVersionCode
+		versionName = release_versionName
 
 		ndk {
 			abiFilters += listOf("arm64-v8a", "x86_64")
