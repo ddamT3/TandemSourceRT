@@ -22,8 +22,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -57,9 +57,8 @@ private data class CalendarCell(
 fun CalendarScreen(
 	vm: HomeViewModel,
 	onApply: (LocalDate) -> Unit,
-	onCancel: () -> Unit,
 	modifier: Modifier = Modifier,
-	onExportPumpEventsBin: () -> Unit = {},
+	onExportPumpEventsJson: () -> Unit = {},
 	exportMessage: String? = null
 ) {
 	val state by vm.state
@@ -77,7 +76,7 @@ fun CalendarScreen(
 	}
 
 	val monthFormatter = remember {
-		DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
+		DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)
 	}
 	val dateFormatter = remember {
 		DateTimeFormatter.ofPattern("dd/MM/yyyy")
@@ -105,7 +104,7 @@ fun CalendarScreen(
 				verticalArrangement = Arrangement.spacedBy(10.dp)
 			) {
 				Text(
-					text = "Seleziona l'inizio vista",
+					text = "Select the start date",
 					style = MaterialTheme.typography.titleMedium
 				)
 
@@ -129,15 +128,15 @@ fun CalendarScreen(
 						}
 					) {
 						Icon(
-							imageVector = Icons.Outlined.ArrowBack,
-							contentDescription = "Mese precedente"
+							imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+							contentDescription = "Previous month"
 						)
 					}
 
 					Text(
 						text = visibleMonth.value.format(monthFormatter)
 							.replaceFirstChar { ch ->
-								if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+								if (ch.isLowerCase()) ch.titlecase(Locale.ENGLISH) else ch.toString()
 							},
 						style = MaterialTheme.typography.titleMedium,
 						fontWeight = FontWeight.SemiBold
@@ -149,8 +148,8 @@ fun CalendarScreen(
 						}
 					) {
 						Icon(
-							imageVector = Icons.Outlined.ArrowForward,
-							contentDescription = "Mese successivo"
+							imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+							contentDescription = "Next month"
 						)
 					}
 				}
@@ -260,13 +259,13 @@ fun CalendarScreen(
 				}
 
 				Text(
-					text = "Data selezionata: ${dateFormatter.format(selectedDate.value)}",
+					text = "Selected date: ${dateFormatter.format(selectedDate.value)}",
 					style = MaterialTheme.typography.bodyMedium,
 					fontWeight = FontWeight.Medium
 				)
 
 				Text(
-					text = "Tocca un giorno per applicarlo subito.",
+					text = "Tap a day to apply it immediately.",
 					style = MaterialTheme.typography.bodySmall
 				)
 			}
@@ -288,15 +287,15 @@ fun CalendarScreen(
 				)
 
 				Text(
-					text = "Scarica gli eventi completi in formato JSON nella cartella Download/TandemSourceRT.",
+					text = "Download complete pump events as JSON to Download/TandemSourceRT.",
 					style = MaterialTheme.typography.bodySmall
 				)
 
 				OutlinedButton(
-					onClick = onExportPumpEventsBin,
+					onClick = onExportPumpEventsJson,
 					modifier = Modifier.fillMaxWidth()
 				) {
-					Text("Download .json event")
+					Text("Download events JSON")
 				}
 
 				if (!exportMessage.isNullOrBlank()) {
@@ -348,7 +347,7 @@ private fun buildCalendarCells(month: YearMonth): List<CalendarCell> {
 }
 
 private fun weekdayHeaders(): List<String> {
-	val locale = Locale.getDefault()
+	val locale = Locale.ENGLISH
 	return listOf(
 		DayOfWeek.MONDAY,
 		DayOfWeek.TUESDAY,

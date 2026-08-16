@@ -35,8 +35,7 @@ fun LoginScreen(
 	onEmailChange: (String) -> Unit,
 	onPasswordChange: (String) -> Unit,
 	onRememberMeChange: (Boolean) -> Unit,
-	onSignInClick: (email: String, password: String, rememberMe: Boolean) -> Unit = { _, _, _ -> },
-	onTestClick: () -> Unit = {}
+	onSignInClick: (email: String, password: String, rememberMe: Boolean) -> Unit = { _, _, _ -> }
 ) {
 	var passwordVisible by remember { mutableStateOf(false) }
 
@@ -111,13 +110,6 @@ fun LoginScreen(
 					modifier = Modifier.fillMaxWidth()
 				) {
 					Text("Sign in")
-				}
-
-				Button(
-					onClick = onTestClick,
-					modifier = Modifier.fillMaxWidth()
-				) {
-					Text("Test")
 				}
 			}
 		}

@@ -45,7 +45,7 @@ security_grep*.txt
 
 # ===== Tandem dumps / exported data =====
 Dump/
-data/
+/data/
 backend/data/
 *.bin
 *.csv
@@ -74,3 +74,6 @@ androidTest-results/
 
 # ===== Firebase / Google config, if added later =====
 google-services.json
+
+/LocalAssets/
+/.android/

@@ -31,6 +31,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.tandemapp.data.EmbeddedTandemRepository
 import com.example.tandemapp.data.LiveHistoryResult
+import com.example.tandemapp.data.PumpSettingsRepository
+import com.example.tandemapp.data.PumpSettingsResult
+import com.example.tandemapp.model.PumpSettingsUiState
 import com.example.tandemapp.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import android.content.Context
@@ -54,6 +57,8 @@ fun AppRoot(vm: HomeViewModel) {
 	var loginError by remember { mutableStateOf<String?>(null) }
 	var calendarExportMessage by remember { mutableStateOf<String?>(null) }
 	var pumpSettingsExportMessage by remember { mutableStateOf<String?>(null) }
+	var pumpSettingsState by remember { mutableStateOf<PumpSettingsUiState>(PumpSettingsUiState.Idle) }
+	var pumpSettingsRequestSerial by remember { mutableStateOf(0L) }
 
 	val context = LocalContext.current
 	val configuration = LocalConfiguration.current
@@ -65,6 +70,9 @@ fun AppRoot(vm: HomeViewModel) {
 			)
 
 	val apiRepo = remember(context) { EmbeddedTandemRepository(context.applicationContext) }
+	val pumpSettingsRepo = remember(context, apiRepo) {
+		PumpSettingsRepository(context.applicationContext, apiRepo::getAuthenticatedContext)
+	}
 	val scope = rememberCoroutineScope()
 
 	val prefs = remember {
@@ -81,6 +89,22 @@ fun AppRoot(vm: HomeViewModel) {
 
 	var loginRememberMe by rememberSaveable {
 			mutableStateOf(prefs.getBoolean("remember_me", false))
+	}
+
+	suspend fun loadPumpSettings() {
+		val requestSerial = ++pumpSettingsRequestSerial
+		if (loginEmail.isBlank() || loginPassword.isBlank()) {
+			if (requestSerial == pumpSettingsRequestSerial) {
+				pumpSettingsState = PumpSettingsUiState.Error("Credenziali mancanti")
+			}
+			return
+		}
+		pumpSettingsState = PumpSettingsUiState.Loading
+		val loadedState = when (val result = pumpSettingsRepo.loadCurrent(loginEmail, loginPassword)) {
+			is PumpSettingsResult.Success -> PumpSettingsUiState.Ready(result.data)
+			is PumpSettingsResult.Failure -> PumpSettingsUiState.Error(result.message)
+		}
+		if (requestSerial == pumpSettingsRequestSerial) pumpSettingsState = loadedState
 	}
 
 	LaunchedEffect(Unit) {
@@ -152,7 +176,10 @@ fun AppRoot(vm: HomeViewModel) {
 
 				NavigationBarItem(
 					selected = currentScreen == AppScreen.PumpSettings,
-					onClick = { currentScreen = AppScreen.PumpSettings },
+					onClick = {
+						currentScreen = AppScreen.PumpSettings
+						scope.launch { loadPumpSettings() }
+					},
 					icon = { PumpIcon() },
 					label = { Text("Pump", fontSize = 10.sp) }
 				)
@@ -257,49 +284,50 @@ fun AppRoot(vm: HomeViewModel) {
 						}
 					}
 				},
-				onCancel = { currentScreen = AppScreen.Home },
 				modifier = Modifier.padding(innerPadding),
 				exportMessage = calendarExportMessage,
-				onExportPumpEventsBin = {
+				onExportPumpEventsJson = {
 					scope.launch {
 						val email = prefs.getString("email", "") ?: ""
 						val password = prefs.getString("password", "") ?: ""
 
 						if (email.isBlank() || password.isBlank()) {
-							calendarExportMessage = "Credenziali mancanti"
+							calendarExportMessage = "Missing credentials"
 							currentScreen = AppScreen.Login
 							return@launch
 						}
 
 						val selectedDate = vm.state.value.anchorDate
-						calendarExportMessage = "Download .json event in corso..."
-						calendarExportMessage = apiRepo.exportPumpEventsBin(email, password, selectedDate)
+						calendarExportMessage = "Downloading events JSON..."
+						calendarExportMessage = apiRepo.exportPumpEventsJson(email, password, selectedDate)
 					}
 				}
 			)
 
 			AppScreen.PumpSettings -> PumpSettingsScreen(
+				state = pumpSettingsState,
 				modifier = Modifier.padding(innerPadding),
-				exportMessage = pumpSettingsExportMessage,
-				onDownloadPumpSettingsBin = {
+				onRetry = {
 					scope.launch {
-						val email = prefs.getString("email", "") ?: ""
-						val password = prefs.getString("password", "") ?: ""
-
-						if (email.isBlank() || password.isBlank()) {
-							pumpSettingsExportMessage = "Credenziali mancanti"
-							currentScreen = AppScreen.Login
-							return@launch
-						}
-
-						pumpSettingsExportMessage = "Download .bin settings in corso..."
-						pumpSettingsExportMessage = apiRepo.exportPumpSettingsBin(email, password)
+						loadPumpSettings()
 					}
 				}
 			)
 
-			AppScreen.AppSettings -> PlaceholderScreen(
-				modifier = Modifier.padding(innerPadding)
+			AppScreen.AppSettings -> AppSettingsScreen(
+				modifier = Modifier.padding(innerPadding),
+				pumpSettingsExportMessage = pumpSettingsExportMessage,
+				onDownloadPumpSettingsJson = {
+					scope.launch {
+						if (loginEmail.isBlank() || loginPassword.isBlank()) {
+							pumpSettingsExportMessage = "Missing credentials"
+							currentScreen = AppScreen.Login
+							return@launch
+						}
+						pumpSettingsExportMessage = "Downloading settings JSON..."
+						pumpSettingsExportMessage = apiRepo.exportPumpSettingsJson(loginEmail, loginPassword)
+					}
+				}
 			)
 
 			AppScreen.Login -> LoginScreen(
@@ -310,12 +338,14 @@ fun AppRoot(vm: HomeViewModel) {
 				errorMessage = loginError,
 				onEmailChange = { newEmail ->
 					loginEmail = newEmail
+					pumpSettingsState = PumpSettingsUiState.Idle
 					if (loginRememberMe) {
 						prefs.edit().putString("email", newEmail).apply()
 					}
 				},
 				onPasswordChange = { newPassword ->
 					loginPassword = newPassword
+					pumpSettingsState = PumpSettingsUiState.Idle
 					if (loginRememberMe) {
 						prefs.edit().putString("password", newPassword).apply()
 					}
@@ -371,10 +401,6 @@ fun AppRoot(vm: HomeViewModel) {
 							}
 						}
 					}
-				},
-				onTestClick = {
-					vm.loadTestData(apiRepo)
-					currentScreen = AppScreen.Home
 				}
 			)
 		}

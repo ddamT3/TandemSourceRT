@@ -7,7 +7,6 @@ import com.chaquo.python.PyException
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.example.tandemapp.model.DayDataset
-import com.example.tandemapp.model.HistoryLiveResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -34,30 +33,6 @@ class EmbeddedTandemRepository(
 	}
 
 
-	private fun parseDatasetResponse(responseText: String): LiveHistoryResult {
-		val root = json.parseToJsonElement(responseText).jsonObject
-		val status = root["status"]?.jsonPrimitive?.contentOrNull
-		if (status != "ok") {
-			Log.e(tag, "Embedded decode failed: $responseText")
-			val detail = root["detail"]?.jsonObject
-			val message = detail?.get("message")?.jsonPrimitive?.contentOrNull
-			val stage = detail?.get("stage")?.jsonPrimitive?.contentOrNull
-			return if (stage == "authentication") {
-				LiveHistoryResult.AuthenticationFailure(message)
-			} else {
-				LiveHistoryResult.DataFailure(message)
-			}
-		}
-
-		return try {
-			val response = json.decodeFromString(HistoryLiveResponse.serializer(), responseText)
-			LiveHistoryResult.Success(response.data.toDayDataset())
-		} catch (e: Exception) {
-			Log.e(tag, "Risposta autenticata ma dataset non valido", e)
-			LiveHistoryResult.DataFailure(e.message)
-		}
-	}
-
 	private fun ensurePythonStarted() {
 		if (!Python.isStarted()) {
 			Python.start(AndroidPlatform(context.applicationContext))
@@ -65,57 +40,19 @@ class EmbeddedTandemRepository(
 	}
 
 	suspend fun loadLiveHistory(username: String, password: String, selectedDate: LocalDate? = null): LiveHistoryResult = withContext(Dispatchers.IO) {
-		try {
-			ensurePythonStarted()
-			val py = Python.getInstance()
-			val module = py.getModule("tandem_embedded")
-			Log.d(tag, "fetch_live_dataset selectedDate=$selectedDate")
-
-			val responseText = module
-				.callAttr("fetch_live_dataset", username, password, selectedDate?.toString())
-				.toJava(String::class.java)
-
-			return@withContext parseDatasetResponse(responseText)
-		} catch (e: PyException) {
-			Log.e(tag, "Errore Python embedded", e)
-			return@withContext LiveHistoryResult.DataFailure(e.message)
+		val auth = when (val result = getAuthenticatedContext(username, password)) {
+			is TandemAuthContextResult.Success -> result.context
+			is TandemAuthContextResult.Failure ->
+				return@withContext LiveHistoryResult.AuthenticationFailure(result.message)
+		}
+		return@withContext try {
+			Log.d(tag, "Kotlin pump-event pipeline selectedDate=$selectedDate")
+			LiveHistoryResult.Success(PumpEventsRepository().load(auth, selectedDate))
 		} catch (e: Exception) {
-			Log.e(tag, "Errore repository standalone", e)
-			return@withContext LiveHistoryResult.DataFailure(e.message)
+			Log.e(tag, "Errore caricamento pump-event Kotlin", e)
+			LiveHistoryResult.DataFailure(e.message)
 		}
 	}
-	
-
-	suspend fun loadBundledBlobHistory(assetName: String): DayDataset? = withContext(Dispatchers.IO) {
-		try {
-			ensurePythonStarted()
-
-			val outFile = java.io.File(context.cacheDir, assetName)
-			context.assets.open(assetName).use { input ->
-				outFile.outputStream().use { output ->
-					input.copyTo(output)
-				}
-			}
-
-			val py = Python.getInstance()
-			val module = py.getModule("tandem_embedded")
-			val responseText = module.callAttr("decode_test_blob", outFile.absolutePath)
-				.toJava(String::class.java)
-
-			return@withContext when (val result = parseDatasetResponse(responseText)) {
-				is LiveHistoryResult.Success -> result.dataset
-				is LiveHistoryResult.AuthenticationFailure,
-				is LiveHistoryResult.DataFailure -> null
-			}
-		} catch (e: PyException) {
-			Log.e(tag, "Errore Python embedded decode blob", e)
-			return@withContext null
-		} catch (e: Exception) {
-			Log.e(tag, "Errore repository standalone decode blob", e)
-			return@withContext null
-		}
-	}
-
 
 
 	private fun exportDirectory(): File {
@@ -135,77 +72,82 @@ class EmbeddedTandemRepository(
 		val type = root["type"]?.jsonPrimitive?.contentOrNull ?: "export"
 
 		if (status == "ok") {
-			val path = root["path"]?.jsonPrimitive?.contentOrNull ?: "file salvato"
-			return "$type salvato: $path"
+			val path = root["path"]?.jsonPrimitive?.contentOrNull ?: "saved file"
+			return "$type saved: $path"
 		}
 
 		val detail = root["detail"]?.jsonObject
 		val message = detail?.get("message")?.jsonPrimitive?.contentOrNull ?: responseText
-		return "$type fallito: $message"
+		return "$type failed: $message"
 	}
 
+	suspend fun getAuthenticatedContext(username: String, password: String): TandemAuthContextResult =
+		withContext(Dispatchers.IO) {
+			try {
+				ensurePythonStarted()
+				val responseText = Python.getInstance()
+					.getModule("tandem_embedded")
+					.callAttr("get_authenticated_context_json", username, password)
+					.toJava(String::class.java)
+				val root = json.parseToJsonElement(responseText).jsonObject
+				if (root["status"]?.jsonPrimitive?.contentOrNull != "ok") {
+					val message = root["detail"]?.jsonObject
+						?.get("message")?.jsonPrimitive?.contentOrNull
+					return@withContext TandemAuthContextResult.Failure(
+						message ?: "Autenticazione Tandem non riuscita"
+					)
+				}
 
-	private fun exportBaseDir(): String {
-		return context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.absolutePath
-			?: context.filesDir.absolutePath
-	}
+				val accessToken = root["accessToken"]?.jsonPrimitive?.contentOrNull
+				val pumperId = root["pumperId"]?.jsonPrimitive?.contentOrNull
+				if (accessToken.isNullOrBlank() || pumperId.isNullOrBlank()) {
+					return@withContext TandemAuthContextResult.Failure("Contesto autenticato incompleto")
+				}
+				TandemAuthContextResult.Success(TandemAuthContext(accessToken, pumperId))
+			} catch (e: Exception) {
+				Log.e(tag, "Errore recupero contesto autenticato", e)
+				TandemAuthContextResult.Failure(e.message ?: "Autenticazione Tandem non riuscita")
+			}
+		}
 
-	suspend fun exportPumpEventsBin(username: String, password: String, selectedDate: LocalDate? = null): String = withContext(Dispatchers.IO) {
+
+	suspend fun exportPumpEventsJson(username: String, password: String, selectedDate: LocalDate? = null): String = withContext(Dispatchers.IO) {
 		try {
 			ensurePythonStarted()
 			val py = Python.getInstance()
 			val module = py.getModule("tandem_embedded")
-			Log.d(tag, "export_full_pump_events_bin selectedDate=$selectedDate")
+			Log.d(tag, "export_pump_logs_json selectedDate=$selectedDate")
 
 			val responseText = module
-				.callAttr("export_full_pump_events_bin", username, password, exportDirectory().absolutePath, selectedDate?.toString())
+				.callAttr("export_pump_logs_json", username, password, exportDirectory().absolutePath, selectedDate?.toString())
 				.toJava(String::class.java)
 
 			return@withContext parseExportResponse(responseText)
 		} catch (e: PyException) {
-			Log.e(tag, "Errore Python export .bin", e)
-			return@withContext "bin fallito: ${e.message}"
+			Log.e(tag, "Errore Python export pump logs JSON", e)
+			return@withContext "Events JSON failed: ${e.message}"
 		} catch (e: Exception) {
-			Log.e(tag, "Errore export .bin", e)
-			return@withContext "bin fallito: ${e.message}"
+			Log.e(tag, "Errore export pump logs JSON", e)
+			return@withContext "Events JSON failed: ${e.message}"
 		}
 	}
 
-	suspend fun exportDatasetJson(username: String, password: String): String = withContext(Dispatchers.IO) {
+	suspend fun exportPumpSettingsJson(username: String, password: String): String = withContext(Dispatchers.IO) {
 		try {
 			ensurePythonStarted()
 			val py = Python.getInstance()
 			val module = py.getModule("tandem_embedded")
 			val responseText = module
-				.callAttr("export_dataset_json", username, password, exportDirectory().absolutePath)
+				.callAttr("export_pump_settings_json", username, password, exportDirectory().absolutePath)
 				.toJava(String::class.java)
 
 			return@withContext parseExportResponse(responseText)
 		} catch (e: PyException) {
-			Log.e(tag, "Errore Python export dataset .json", e)
-			return@withContext "json fallito: ${e.message}"
+			Log.e(tag, "Errore Python export pump settings JSON", e)
+			return@withContext "Settings JSON failed: ${e.message}"
 		} catch (e: Exception) {
-			Log.e(tag, "Errore export dataset .json", e)
-			return@withContext "json fallito: ${e.message}"
-		}
-	}
-
-	suspend fun exportPumpSettingsBin(username: String, password: String): String = withContext(Dispatchers.IO) {
-		try {
-			ensurePythonStarted()
-			val py = Python.getInstance()
-			val module = py.getModule("tandem_embedded")
-			val responseText = module
-				.callAttr("export_pump_settings_bin", username, password, exportDirectory().absolutePath)
-				.toJava(String::class.java)
-
-			return@withContext parseExportResponse(responseText)
-		} catch (e: PyException) {
-			Log.e(tag, "Errore Python export settings .bin", e)
-			return@withContext "settings bin fallito: ${e.message}"
-		} catch (e: Exception) {
-			Log.e(tag, "Errore export settings .bin", e)
-			return@withContext "settings bin fallito: ${e.message}"
+			Log.e(tag, "Errore export pump settings JSON", e)
+			return@withContext "Settings JSON failed: ${e.message}"
 		}
 	}
 

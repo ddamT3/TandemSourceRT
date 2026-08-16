@@ -9,8 +9,8 @@ plugins {
 
 // Versione release letta da buildAPK.bat. I nomi delle due variabili sono
 // intenzionalmente compatibili con le espressioni regolari dello script.
-val release_versionName = "01.02"
-val release_versionCode = 2
+val release_versionName = "02.01"
+val release_versionCode = 1
 
 val releaseVersionParts = release_versionName.split(".")
 require(releaseVersionParts.size == 2) { "versionName deve usare il formato MM.mm" }
@@ -73,12 +73,6 @@ chaquopy {
 			install("requests==2.32.3")
 		}
 	}
-	sourceSets {
-		getByName("main") {
-			srcDir("../../backend")
-			srcDir("../../tandem_decoder/src")
-		}
-	}
 }
 
 dependencies {
@@ -93,14 +87,8 @@ dependencies {
 	implementation("androidx.compose.ui:ui-tooling-preview")
 
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+	testImplementation("junit:junit:4.13.2")
 }
-
-
-
-
-
-
-
 
 
 

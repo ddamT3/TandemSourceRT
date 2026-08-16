@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from tandem_decoder.tandem_time import tandem_seconds_to_iso
+
+TANDEM_EPOCH = datetime(2008, 1, 1, tzinfo=timezone.utc)
+
+
+def tandem_seconds_to_iso(seconds: int) -> str:
+	return (TANDEM_EPOCH + timedelta(seconds=int(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 PUMP_CONTROL_STATE = {
@@ -63,7 +69,7 @@ def _time(event: dict[str, Any]) -> str | None:
 	"""Return the pump wall-clock timeline used by Tandem Source."""
 	# estimatedDateTime is UTC/corrected time and shifts chart events relative
 	# to the wall-clock time displayed by Tandem Source. Keep pumpDateTime as
-	# the canonical timeline, consistently with the legacy decoder.
+	# the canonical timeline, matching the wall-clock values shown by Tandem Source.
 	value = event.get("pumpDateTime") or event.get("estimatedDateTime")
 	if not value:
 		return None
@@ -170,7 +176,7 @@ def _extract_basal(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 		by_time = {row["time"]: row for row in rows}
 		return sorted(by_time.values(), key=lambda row: row["time"])
 
-	# Compatibility fallback for responses which expose only rate changes.
+	# Some BFF responses expose only explicit rate-change events.
 	for event in events:
 		if event.get("eventCode") != 3:
 			continue

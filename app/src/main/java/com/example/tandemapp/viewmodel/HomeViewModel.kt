@@ -2,11 +2,7 @@ package com.example.tandemapp.viewmodel
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.example.tandemapp.data.JsonTandemRepository
-import com.example.tandemapp.data.EmbeddedTandemRepository
 import com.example.tandemapp.model.DayDataset
-import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -46,9 +42,7 @@ enum class NavigationDirection {
 	NEXT
 }
 
-class HomeViewModel(
-	private val repo: JsonTandemRepository
-) : ViewModel() {
+class HomeViewModel : ViewModel() {
 
 
 	var state = mutableStateOf(HomeState())
@@ -248,40 +242,6 @@ class HomeViewModel(
 			}
 		}
 	}
-
-	fun loadTestData(testRepo: EmbeddedTandemRepository) {
-		viewModelScope.launch {
-			val history = testRepo.loadBundledBlobHistory("pumpevents.bin") ?: return@launch
-
-			val timeline = buildTimelinePairs(history).map { it.first }
-			val firstTime = timeline.firstOrNull()
-			val lastTime = timeline.lastOrNull()
-			val center = if (firstTime != null && lastTime != null) {
-				firstTime.plusSeconds(Duration.between(firstTime, lastTime).seconds / 2L)
-			} else {
-				LocalDate.now().atTime(12, 0).atOffset(ZoneOffset.UTC)
-			}
-
-			val available = timeline
-				.map { it.toLocalDate() }
-				.distinct()
-				.sorted()
-
-			val anchorDate = center.toLocalDate()
-			val halfWindowSeconds = state.value.selectedWindowHours * 3600L / 2L
-
-			state.value = state.value.copy(
-				selected = anchorDate,
-				anchorDate = anchorDate,
-				available = available,
-				dataset = history,
-				userModeSegments = buildUserModeTimeline(history),
-				visibleWindowStart = center.minusSeconds(halfWindowSeconds),
-				visibleWindowEnd = center.plusSeconds(halfWindowSeconds)
-			)
-		}
-	}
-
 
 	private fun buildUserModeTimeline(dataset: DayDataset): List<UserModeSegment> {
 		val events = dataset.deviceStates

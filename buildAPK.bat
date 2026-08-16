@@ -14,6 +14,8 @@ set "GRADLEW=%APP_ROOT%\gradlew.bat"
 set "GRADLE_TASK=:app:assembleDebug"
 set "PS_SCRIPT=%TEMP%\tandem_build_version.ps1"
 set "VERSION_FILE=%TEMP%\tandem_build_version.txt"
+set "BUILD_LOG=%TEMP%\tandem_gradle_build.log"
+set "GRADLE_BACKUP=%TEMP%\tandem_build_gradle.kts.bak"
 set "APK_SRC=%APP_ROOT%\app\build\outputs\apk\debug\TandemSourceRT.apk"
 set "LOCAL_PROPERTIES=%APP_ROOT%\local.properties"
 
@@ -62,6 +64,12 @@ if "%NOINCR%"=="1" (
 )
 
 if "%NOINCR%"=="1" goto WRITE_VERSION_NOINCR
+copy /Y "%GRADLE_FILE%" "%GRADLE_BACKUP%" > nul
+if errorlevel 1 (
+    echo ERRORE: impossibile creare il backup di build.gradle.kts.
+    popd
+    exit /b 1
+)
 goto WRITE_VERSION_INCR
 
 :WRITE_VERSION_NOINCR
@@ -106,12 +114,26 @@ set /p VERSION=<"%VERSION_FILE%"
 set "APK_RELEASE=%APP_ROOT%\app\build\outputs\apk\debug\TandemSourceRT-%VERSION%.apk"
 
 pushd "%APP_ROOT%"
-call "%GRADLEW%" %GRADLE_TASK%
+call "%GRADLEW%" %GRADLE_TASK% > "%BUILD_LOG%" 2>&1
 set "GRADLE_EXIT=%ERRORLEVEL%"
 popd
+type "%BUILD_LOG%"
 if not "%GRADLE_EXIT%"=="0" (
+    if "%NOINCR%"=="0" copy /Y "%GRADLE_BACKUP%" "%GRADLE_FILE%" > nul
+    echo.
+    echo BUILD FAILED: version restored; Git commit and release commands skipped.
     popd
     exit /b %GRADLE_EXIT%
+)
+
+findstr /R /C:"^w: " /C:"^e: " "%BUILD_LOG%" > nul
+if not errorlevel 1 (
+    if "%NOINCR%"=="0" copy /Y "%GRADLE_BACKUP%" "%GRADLE_FILE%" > nul
+    echo.
+    echo BUILD REJECTED: Kotlin warnings or errors were found.
+    echo Version restored; Git commit and release commands skipped.
+    popd
+    exit /b 2
 )
 
 if exist "%APK_SRC%" (
