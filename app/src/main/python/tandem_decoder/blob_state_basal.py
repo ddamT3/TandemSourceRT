@@ -18,7 +18,7 @@ ID_USER_MODE_CHANGE = 229
 PUMP_CONTROL_STATE = {
 	0: "No Control",
 	1: "Open Loop",
-	2: "Pining",
+	2: "Pinning",
 	3: "Closed Loop",
 }
 

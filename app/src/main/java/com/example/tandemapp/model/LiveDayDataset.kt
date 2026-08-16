@@ -9,7 +9,8 @@ data class LiveDayDataset(
 	val basal: List<BasalPoint>,
 	val iob: List<IobPoint>,
 	val cho: List<CarbEvent>,
-	val deviceState: List<DeviceStateEvent>
+	val deviceState: List<DeviceStateEvent>,
+	val supplementalEvents: List<SupplementalPumpEvent> = emptyList()
 ) {
 	fun toDayDataset(): DayDataset {
 		return DayDataset(
@@ -18,7 +19,8 @@ data class LiveDayDataset(
 			carbs = cho,
 			iob = iob,
 			basal = basal,
-			deviceStates = deviceState
+			deviceStates = deviceState,
+			supplementalEvents = supplementalEvents
 		)
 	}
 }

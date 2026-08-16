@@ -190,9 +190,7 @@ object GlucoseChartLayout {
 		const val tipLengthRatio: Float = 0.74f
 		val innerCircleInset: Float = 2.4f * scale
 
-		val pauseBarOffsetX: Float = 4.2f * scale
-		val pauseBarHalfHeight: Float = 7.0f * scale
-		val pauseStrokeWidth: Float = 3.4f * scale
+		val stopSquareHalfSize: Float = 7.0f * scale
 
 		val playLeftOffsetX: Float = 5.0f * scale
 		val playHalfHeight: Float = 8.0f * scale

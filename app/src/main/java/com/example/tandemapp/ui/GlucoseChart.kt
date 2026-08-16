@@ -607,7 +607,9 @@ fun GlucoseChart(
 
 		visibleDeviceEvents.forEach { event ->
 			val cx = xFor(event.time).coerceIn(chartLeft, chartRight)
-			val belowEventLine = event.eventType == "cartridge_site_change" || event.eventType == "sensor_session_ended"
+			val belowEventLine = event.eventType == "cartridge_site_change" ||
+				event.eventType == "sensor_session_ended" ||
+				event.eventType == "profile_changed"
 			val cy = if (belowEventLine) statusLineY + mOffsetBelow else statusLineY - mOffsetAbove
 			val fill = deviceEventColor(event.eventType)
 			val r = mRadius
@@ -623,8 +625,12 @@ fun GlucoseChart(
 
 			when (event.eventType) {
 				"pump_suspended" -> {
-					drawLine(fill, Offset(cx - GlucoseChartLayout.EventMarkers.pauseBarOffsetX * mScale, cy - GlucoseChartLayout.EventMarkers.pauseBarHalfHeight * mScale), Offset(cx - GlucoseChartLayout.EventMarkers.pauseBarOffsetX * mScale, cy + GlucoseChartLayout.EventMarkers.pauseBarHalfHeight * mScale), GlucoseChartLayout.EventMarkers.pauseStrokeWidth * mScale)
-					drawLine(fill, Offset(cx + GlucoseChartLayout.EventMarkers.pauseBarOffsetX * mScale, cy - GlucoseChartLayout.EventMarkers.pauseBarHalfHeight * mScale), Offset(cx + GlucoseChartLayout.EventMarkers.pauseBarOffsetX * mScale, cy + GlucoseChartLayout.EventMarkers.pauseBarHalfHeight * mScale), GlucoseChartLayout.EventMarkers.pauseStrokeWidth * mScale)
+					val halfSize = GlucoseChartLayout.EventMarkers.stopSquareHalfSize * mScale
+					drawRect(
+						color = fill,
+						topLeft = Offset(cx - halfSize, cy - halfSize),
+						size = Size(halfSize * 2f, halfSize * 2f)
+					)
 				}
 				"pump_resumed" -> {
 					val playPath = Path().apply {
@@ -649,6 +655,21 @@ fun GlucoseChart(
 				"sensor_session_ended" -> {
 					drawLine(fill, Offset(cx - GlucoseChartLayout.EventMarkers.xHalfSize * mScale, cy - GlucoseChartLayout.EventMarkers.xHalfSize * mScale), Offset(cx + GlucoseChartLayout.EventMarkers.xHalfSize * mScale, cy + GlucoseChartLayout.EventMarkers.xHalfSize * mScale), GlucoseChartLayout.EventMarkers.xStrokeWidth * mScale)
 					drawLine(fill, Offset(cx + GlucoseChartLayout.EventMarkers.xHalfSize * mScale, cy - GlucoseChartLayout.EventMarkers.xHalfSize * mScale), Offset(cx - GlucoseChartLayout.EventMarkers.xHalfSize * mScale, cy + GlucoseChartLayout.EventMarkers.xHalfSize * mScale), GlucoseChartLayout.EventMarkers.xStrokeWidth * mScale)
+				}
+				"profile_changed" -> {
+					val profilePaint = Paint().apply {
+						color = fill.toArgbInt()
+						textAlign = Paint.Align.CENTER
+						textSize = GlucoseChartLayout.fontEvent * 0.8f * mScale
+						isAntiAlias = true
+						isFakeBoldText = true
+					}
+					drawContext.canvas.nativeCanvas.drawText(
+						"P",
+						cx,
+						cy + GlucoseChartLayout.fontEvent * 0.28f * mScale,
+						profilePaint
+					)
 				}
 			}
 		}
@@ -984,6 +1005,7 @@ private fun deviceEventColor(eventType: String): Color {
 		"pump_resumed" -> Color(0xFF43A047)
 		"cartridge_site_change" -> Color(0xFFFB8C00)
 		"sensor_session_ended" -> Color(0xFF8E24AA)
+		"profile_changed" -> Color(0xFF00897B)
 		else -> Color(0xFF757575)
 	}
 }
@@ -994,6 +1016,7 @@ private fun shortEventLabel(eventType: String): String {
 		"pump_resumed" -> "Restart"
 		"cartridge_site_change" -> "Change set"
 		"sensor_session_ended" -> "End Sensor"
+		"profile_changed" -> "Change profile"
 		else -> eventType
 	}
 }

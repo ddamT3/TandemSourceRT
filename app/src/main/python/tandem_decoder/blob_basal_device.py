@@ -31,13 +31,13 @@ def _f32(buf: bytes, off: int) -> float:
 PCM_LABEL = {
 	0: 'No Control',
 	1: 'Open Loop',
-	2: 'Pining',
+	2: 'Pinning',
 	3: 'Closed Loop',
 }
 PCM_DAILY_LABEL = {
 	0: 'PCM No Control',
 	1: 'PCM Open Loop',
-	2: 'PCM Pining',
+	2: 'PCM Pinning',
 	3: 'PCM Closed Loop',
 }
 USERMODE_LABEL = {

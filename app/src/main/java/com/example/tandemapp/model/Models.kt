@@ -1,6 +1,7 @@
 package com.example.tandemapp.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class CgmPoint(
@@ -20,7 +21,9 @@ data class BolusEvent(
 	val immediate_insulin_u: Double? = null,
 	val extended_insulin_u: Double? = null,
 	val extended_duration_min: Int? = null,
-	val duration_min: Int? = null
+	val duration_min: Int? = null,
+	val display_code: String? = null,
+	val is_interrupted: Boolean = false
 )
 
 @Serializable
@@ -61,11 +64,23 @@ data class DeviceStateEvent(
 )
 
 @Serializable
+data class SupplementalPumpEvent(
+	val time: String? = null,
+	val estimatedDateTime: String? = null,
+	val deviceAssignmentId: String? = null,
+	val eventCode: Int,
+	val sequenceGroup: Int = 0,
+	val sequenceNumber: Int = 0,
+	val eventProperties: JsonObject = JsonObject(emptyMap())
+)
+
+@Serializable
 data class DayDataset(
 	val cgm: List<CgmPoint>,
 	val bolus: List<BolusEvent>,
 	val carbs: List<CarbEvent>,
 	val iob: List<IobPoint>,
 	val basal: List<BasalPoint>,
-	val deviceStates: List<DeviceStateEvent>
+	val deviceStates: List<DeviceStateEvent>,
+	val supplementalEvents: List<SupplementalPumpEvent> = emptyList()
 )

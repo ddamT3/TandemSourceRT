@@ -231,7 +231,7 @@ class HomeViewModel(
 					SnapshotField.EVENT -> navigateDistinct(
 						pairs = dataset.deviceStates.mapNotNull { event ->
 							parseChartTime(event.time)?.let { time ->
-								mapEventValue(event.eventType, event.CurrentUserMode, event.PumpControlState)?.let { value ->
+								mapEventValue(event.eventType, event.eventSubtype, event.CurrentUserMode, event.PumpControlState)?.let { value ->
 									time to value
 								}
 							}
@@ -422,12 +422,19 @@ class HomeViewModel(
 		}
 	}
 
-	private fun mapEventValue(eventType: String?, currentUserMode: String?, pumpControlState: String?): String? {
+	private fun mapEventValue(eventType: String?, eventSubtype: String?, currentUserMode: String?, pumpControlState: String?): String? {
 		return when {
+			pumpControlState.equals("Pinning", true) ||
+				pumpControlState.equals("Pining", true) ||
+				pumpControlState.equals("Closed Loop", true) ||
+				pumpControlState.equals("Close Loop", true) -> null
 			eventType.equals("pump_suspended", true) -> "Stop"
 			eventType.equals("pump_resumed", true) -> "Restart"
 			eventType.equals("cartridge_site_change", true) -> "Change set"
 			eventType.equals("sensor_session_ended", true) -> "End Sensor"
+			eventType.equals("profile_changed", true) ->
+				eventSubtype?.takeIf { it.isNotBlank() }
+					?: "Change profile"
 			currentUserMode.equals("normal", true) -> "Norm"
 			currentUserMode.equals("exercising", true) -> "EX"
 			currentUserMode.equals("sleep", true) ||

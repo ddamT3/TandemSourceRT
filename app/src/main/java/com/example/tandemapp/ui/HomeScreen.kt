@@ -382,7 +382,13 @@ private fun rememberCursorSnapshot(
 		time = centerTime.format(timeFormatter),
 		iob = iobValue?.let { formatOneDecimal(it) }.orEmpty(),
 		bolus = bolusAtCursor?.let { event ->
-			formatTwoDecimals(event.insulin_delivered_u) + if (event.is_extended == true) " E" else ""
+			buildString {
+				append(formatTwoDecimals(event.insulin_delivered_u))
+				event.display_code?.takeIf { it.isNotBlank() }?.let {
+					append(" ")
+					append(it)
+				}
+			}
 		}.orEmpty(),
 		cho = choAtCursor?.let { formatWhole(it) }.orEmpty(),
 		cgm = cgmValue?.let { formatWhole(it) }.orEmpty(),
@@ -463,6 +469,12 @@ private fun findEventAtCursor(
 	toleranceSeconds: Long = 15 * 60
 ): String? {
 	val nearest = events
+		.filterNot { event ->
+			event.PumpControlState.equals("Pinning", true) ||
+				event.PumpControlState.equals("Pining", true) ||
+				event.PumpControlState.equals("Closed Loop", true) ||
+				event.PumpControlState.equals("Close Loop", true)
+		}
 		.mapNotNull { event ->
 			parseChartTime(event.time)?.let { parsedTime -> parsedTime to event }
 		}
@@ -472,6 +484,9 @@ private fun findEventAtCursor(
 
 	return when {
 		nearest == null -> null
+		nearest.eventType.equals("profile_changed", true) ->
+			nearest.eventSubtype?.takeIf { it.isNotBlank() }
+				?: "Change profile"
 		!shortEventLabel(nearest.eventType, nearest.eventLabel).isNullOrBlank() -> shortEventLabel(nearest.eventType, nearest.eventLabel)
 		nearest.CurrentUserMode.equals("exercise", true) || nearest.CurrentUserMode.equals("exercising", true) -> "EX"
 		nearest.CurrentUserMode.equals("sleep", true) ||
@@ -489,6 +504,7 @@ private fun shortEventLabel(eventType: String?, eventLabel: String?): String? {
 		eventType.equals("pump_resumed", true) -> "Restart"
 		eventType.equals("cartridge_site_change", true) -> "Change set"
 		eventType.equals("sensor_session_ended", true) -> "End Sensor"
+		eventType.equals("profile_changed", true) -> "Change profile"
 		!eventLabel.isNullOrBlank() -> eventLabel
 		else -> null
 	}
