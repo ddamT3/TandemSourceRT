@@ -1,6 +1,6 @@
 # TandemSourceRT --- Toolchain e ambiente
 
-**Aggiornato:** 2026-08-15\
+**Aggiornato:** 2026-08-17\
 **Repository verificato:** `E:\plinco\Documenti\Github\TandemSourceRT`
 
 ## Regole di progetto
@@ -11,8 +11,8 @@
 -   Gli script PowerShell devono terminare con **invio/riga vuota
     finale**.
 -   Non committare versioni di prova solo per testarle.
--   Il sorgente Python è `app\src\main\python\tandem_embedded.py`; non
-    modificare come sorgente la copia sotto `app\build`.
+-   Il runtime dell'app è interamente Kotlin. Il file Python sotto
+    `app\src\test\python` è soltanto un riferimento per i test di parità.
 
 ## Tool e versioni
 
@@ -27,9 +27,7 @@
 | Kotlin Android/Serialization | 1.9.24 | file Gradle |
 | Compose Compiler | 1.5.14 | `app/build.gradle.kts` |
 | Compose BOM | 2024.06.00 | `app/build.gradle.kts` |
-| Chaquopy | 17.0.0 | file Gradle |
-| Python embedded | 3.11 | configurazione Chaquopy e log Android |
-| Python `requests` | 2.32.3 | configurazione Chaquopy |
+| Kotlin serialization JSON | 1.6.3 | `app/build.gradle.kts` |
 | Android Platform Tools | 37.0.1 | SDK `source.properties` |
 | `compileSdk` / `targetSdk` | 35 / 35 | `app/build.gradle.kts` |
 | `minSdk` | 29 | `app/build.gradle.kts` |
@@ -62,7 +60,7 @@ Activity: `com.example.tandemapp.st.MainActivity`.
 -   `gradle\libs.versions.toml` se presente
 -   `local.properties` --- locale al PC, contiene `sdk.dir`
 -   `gitDiff.bat`
--   `app\src\main\python\tandem_embedded.py`
+-   `app\src\main\java\com\example\tandemapp\data\TandemAuthProvider.kt`
 
 `local.properties` aveva causato un build failure perché conteneva
 `sdk.dir=` vuoto. Sul nuovo PC deve puntare all'SDK realmente
@@ -80,7 +78,7 @@ Build debug:
 .\gradlew.bat clean assembleDebug
 ```
 
-Build completamente pulita, utile con Chaquopy:
+Build completamente pulita:
 
 ``` powershell
 Remove-Item -Recurse -Force .\.gradle, .\build, .\app\build -ErrorAction SilentlyContinue
@@ -108,11 +106,11 @@ adb uninstall com.example.tandemapp.st
 adb install ".\app\build\outputs\apk\debug\TandemSourceRT-v01.02.000.apk"
 ```
 
-Log Python:
+Log OAuth Kotlin:
 
 ``` powershell
 adb logcat -c
-adb logcat -d | Select-String "PYTHON"
+adb logcat -d | Select-String "TandemAuth"
 ```
 
 ## API Tandem rilevanti e compatibilità
@@ -129,6 +127,7 @@ Dalla serie `v01.02.xxx` viene usato il nuovo flusso Tandem Source:
 ``` text
 GET /api/pumpers/pumpers/{pumperId}
 GET /api/reports/bff/pump-logs/{assignmentId}
+GET /api/reports/bff/pumper/{pumperId}
 ```
 
 `pump-logs` usa parametri quali `pumperId`, `startDate`, `endDate`,
@@ -136,8 +135,12 @@ GET /api/reports/bff/pump-logs/{assignmentId}
 
 Il nuovo flusso ricava gli `assignmentId` da `devices[]`; non usa più
 `pumpeventmetadata` per ottenere i `tconnectDeviceId`. Il formato JSON
-BFF richiede un adattatore verso il dataset interno `cgm`, `bolus`,
+BFF richiede un adattatore Kotlin verso il dataset interno `cgm`, `bolus`,
 `basal`, `iob`, `cho` e `deviceState`.
+
+Dalla serie `v02.01.xxx`, autenticazione OAuth/PKCE, download, export e
+adattamento dei JSON BFF sono implementati interamente in Kotlin. Non sono
+più inclusi Chaquopy, un interprete Python o la libreria `requests` nell'APK.
 
 ## Inventario da eseguire sul vecchio PC
 

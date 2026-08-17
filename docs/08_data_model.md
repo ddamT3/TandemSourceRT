@@ -2,7 +2,7 @@
 
 ## Dataset Structure
 
-The decoder produces a normalized dataset composed of:
+The Kotlin BFF adapter produces a normalized dataset composed of:
 
 * cgm
 * basal
@@ -10,6 +10,7 @@ The decoder produces a normalized dataset composed of:
 * iob
 * cho
 * deviceState
+* supplementalEvents
 
 ## Semantics
 
@@ -48,6 +49,8 @@ It is reconstructed by merging:
 
 ## Source of Truth
 
-The Tandem event blob is the authoritative source of all decoded values.
+The Tandem Source `pump-logs` JSON response is the authoritative source
+of event values. Pump settings come from the reports pumper JSON response.
 
-No estimation or reconstruction is performed beyond the decoded event data.
+No estimation or reconstruction is performed beyond explicit BFF event data.
+Legacy binary blobs were the source of truth only through `v01.01.xxx`.

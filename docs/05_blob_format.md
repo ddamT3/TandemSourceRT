@@ -1,4 +1,8 @@
-# Blob Format
+# Legacy Blob Format
+
+This document describes the binary format used through `v01.01.xxx`.
+Current `v01.02.xxx` and `v02.01.xxx` builds consume Tandem Source BFF
+JSON and do not include the binary decoder at runtime.
 
 ## Binary Layout
 

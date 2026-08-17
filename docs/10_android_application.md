@@ -5,7 +5,8 @@
 - Kotlin
 - Jetpack Compose
 - MVVM
-- Chaquopy
+- Kotlin serialization
+- Native OAuth/PKCE and HTTP client
 
 ## Features
 
@@ -13,4 +14,6 @@
 - Calendar navigation
 - Dataset visualization
 - Event timeline
-- Local decoding
+- Local BFF JSON adaptation
+- Offline cache for the latest pump settings
+- Raw JSON diagnostic exports

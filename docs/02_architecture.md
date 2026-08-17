@@ -7,17 +7,18 @@
 - Jetpack Compose
 - MVVM
 
-### Python Layer
-- Embedded through Chaquopy
-- OAuth handling
-- Blob download
-- Blob decoding
+### Authentication Layer
+- Native Kotlin OAuth 2.0 authorization-code flow
+- PKCE, cookies, redirects and JWT-expiry handling
+- Pumper ID discovery and API validation
 
-### Decoder Layer
-- Binary record parser
-- Event dispatch
-- Dataset generation
+### Data Layer
+- Native Kotlin HTTP repositories
+- Tandem Source BFF JSON adapters
+- Pump-event dataset generation
+- Latest pump-settings cache
+- Raw diagnostic JSON exports
 
 ## Data Flow
 
-UI → ViewModel → Python → Tandem API → Blob → Decoder → Dataset → UI
+UI → ViewModel → Kotlin OAuth/API → BFF JSON → Kotlin Adapter → Dataset → UI

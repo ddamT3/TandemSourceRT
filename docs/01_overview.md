@@ -1,27 +1,25 @@
 # TandemSourceRT Overview
 
-TandemSourceRT is an Android application that authenticates with Tandem Source, downloads pump event data, decodes Tandem event blobs locally, and visualizes the resulting dataset on-device.
+TandemSourceRT is an Android application that authenticates with Tandem Source, downloads BFF JSON data, adapts it locally in Kotlin, and visualizes the resulting dataset on-device.
 
 ## Goals
 
 - No custom backend server
-- Local blob decoding
+- Native Kotlin JSON adaptation
 - Android-first architecture
-- Multi-pump support
-- Event blob as source of truth
+- Current-pump selection
+- BFF JSON as source of truth
 
 ## High-Level Pipeline
 
 Android App
     ↓
-Embedded Python (Chaquopy)
+Kotlin OAuth/PKCE Client
     ↓
-Tandem APIs
+Tandem Source APIs
     ↓
-Pump Event Blob
+Pump Events / Pump Settings JSON
     ↓
-Local Decoder
+Kotlin Repository and Adapters
     ↓
-Dataset
-    ↓
-UI
+Dataset / Offline Settings Cache / UI

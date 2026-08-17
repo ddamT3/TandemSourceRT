@@ -1,18 +1,18 @@
 # TandemSourceRT
 
-Android application for downloading, decoding and visualizing Tandem t:slim X2 pump history from Tandem t:connect.
+Native Android application for downloading, adapting and visualizing Tandem t:slim X2 pump data from Tandem Source.
 
 ## Features
 
-* Tandem t:connect authentication
+* Tandem Source OAuth/PKCE authentication
 * Cloud data download
-* Multi-pump account support
-* Automatic history merge across multiple pumps
+* Current-pump selection and historical event requests
 * Interactive glucose dashboard
 * Daily history navigation
 * Pump events visualization
-* Embedded Python decoder
-* Pump event blob export
+* Native Kotlin BFF JSON adapters
+* Raw pump-event and pump-settings JSON export
+* Offline cache for the latest pump settings
 * Automatic build numbering
 
 ## Displayed Data
@@ -33,11 +33,11 @@ Android application for downloading, decoding and visualizing Tandem t:slim X2 p
 * Jetpack Compose
 * Material 3
 
-### Embedded Python
+### Data and authentication
 
-* Chaquopy
-* requests
-* Custom Tandem decoder
+* Native Kotlin OAuth/PKCE client
+* Native Kotlin BFF repositories and adapters
+* No embedded Python runtime
 
 ## Data Flow
 
@@ -46,17 +46,13 @@ Login
 ↓
 Tandem Authentication
 ↓
-Pumper Discovery
+Pumper Discovery and Validation
 ↓
-Pump Metadata Download
+Pump Assignment Selection
 ↓
-tconnectDeviceId Enumeration
+Pump Events / Pump Settings JSON
 ↓
-Pump Event Blob Download
-↓
-Blob Decode
-↓
-Multi-Pump Merge
+Kotlin Adapters
 ↓
 UI Rendering
 ```
@@ -161,15 +157,14 @@ APK: TandemSourceRT-v01.01.009.apk
 
 * Android Studio
 * JDK 17+
-* Python 3.x
 * Gradle Wrapper (included)
 
 ## Current Status
 
 Stable version with:
 
-* multi-pump support
-* automatic dataset merge
+* native Kotlin OAuth and BFF data pipeline
+* current-pump selection
 * gap-aware chart rendering
 * automated build workflow
 

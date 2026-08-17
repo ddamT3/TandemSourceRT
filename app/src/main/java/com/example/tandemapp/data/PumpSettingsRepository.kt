@@ -30,13 +30,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-data class TandemAuthContext(val accessToken: String, val pumperId: String)
-
-sealed interface TandemAuthContextResult {
-	data class Success(val context: TandemAuthContext) : TandemAuthContextResult
-	data class Failure(val message: String) : TandemAuthContextResult
-}
-
 sealed interface PumpSettingsResult {
 	data class Success(val data: PumpSettingsData) : PumpSettingsResult
 	data class Failure(val message: String) : PumpSettingsResult
