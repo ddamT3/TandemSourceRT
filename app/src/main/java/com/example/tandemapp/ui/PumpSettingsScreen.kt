@@ -60,7 +60,7 @@ fun PumpSettingsScreen(
 		) {
 			CircularProgressIndicator()
 			Spacer(Modifier.height(12.dp))
-			Text("Caricamento impostazioni pompa...")
+			Text("Loading pump settings...")
 		}
 
 		is PumpSettingsUiState.Error -> Column(
@@ -70,7 +70,7 @@ fun PumpSettingsScreen(
 		) {
 			Text(state.message, color = MaterialTheme.colorScheme.error)
 			Spacer(Modifier.height(12.dp))
-			Button(onClick = onRetry) { Text("Riprova") }
+			Button(onClick = onRetry) { Text("Retry") }
 		}
 
 		is PumpSettingsUiState.Ready -> PumpSettingsContent(state.data, modifier)
@@ -84,7 +84,7 @@ private fun PumpSettingsContent(data: PumpSettingsData, modifier: Modifier) {
 
 	Column(modifier = modifier.fillMaxSize()) {
 		ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 8.dp) {
-			Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Generale") })
+			Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("General") })
 			data.profiles.forEachIndexed { index, profile ->
 				Tab(
 					selected = selectedTab == index + 1,
@@ -106,72 +106,72 @@ private fun GeneralPumpSettings(data: PumpSettingsData) {
 		verticalArrangement = Arrangement.spacedBy(10.dp)
 	) {
 		item {
-			SettingsCard("Origine dati", collapsible = false) {
+			SettingsCard("Data source", collapsible = false) {
 				SettingLine(
-					"Data dei dati",
+					"Data timestamp",
 					formatPumpDataTimestamp(data.lastUploadDate ?: data.settingsTimestamp)
 				)
 				if (data.isFromCache) {
-					Text("Dati disponibili offline", color = MaterialTheme.colorScheme.primary)
+					Text("Available offline", color = MaterialTheme.colorScheme.primary)
 				}
 			}
 		}
 		item {
-			SettingsCard("Pompa") {
-				SettingLine("Modello", data.modelName)
-				SettingLine("Numero di serie", data.serialNumber)
+			SettingsCard("Pump") {
+				SettingLine("Model", data.modelName)
+				SettingLine("Serial number", data.serialNumber)
 				data.softwareVersion?.let { SettingLine("Software", it) }
-				data.algorithm?.let { SettingLine("Algoritmo", it) }
-				SettingLine("Profilo attivo", data.activeProfileName ?: "Non disponibile")
-				SettingLine("Unità glicemia", data.glucoseUnit)
+				data.algorithm?.let { SettingLine("Algorithm", it) }
+				SettingLine("Active profile", data.activeProfileName ?: "Not available")
+				SettingLine("Glucose unit", data.glucoseUnit)
 			}
 		}
 
 		data.controlIqSettings?.let { controlIq ->
 			item {
 				SettingsCard("Control-IQ") {
-					SettingLine("Stato", enabledText(controlIq.closedLoop))
-					controlIq.weight?.let { SettingLine("Peso configurato", "$it kg") }
-					controlIq.totalDailyInsulin?.let { SettingLine("Insulina giornaliera", "$it U") }
+					SettingLine("Status", enabledText(controlIq.closedLoop))
+					controlIq.weight?.let { SettingLine("Configured weight", "$it kg") }
+					controlIq.totalDailyInsulin?.let { SettingLine("Total daily insulin", "$it U") }
 					val schedules = listOfNotNull(
 						controlIq.sleepSchedule0, controlIq.sleepSchedule1,
 						controlIq.sleepSchedule2, controlIq.sleepSchedule3
 					).count { it.enabled }
-					SettingLine("Programmi sonno attivi", schedules.toString())
+					SettingLine("Active sleep schedules", schedules.toString())
 				}
 			}
 		}
 
 		item {
-			SettingsCard("Limiti e comportamento") {
-				data.basalLimitUnitsPerHour?.let { SettingLine("Basale massima", "${format3(it)} U/h") }
-				data.maxBolusUnits?.let { SettingLine("Bolo massimo", "${format2(it)} U") }
-				data.pumpSettings?.lowInsulinThreshold?.let { SettingLine("Soglia insulina residua", "$it U") }
-				data.pumpSettings?.cannulaPrimeSize?.let { SettingLine("Riempimento cannula", "${format2(it / 100.0)} U") }
-				SettingLine("Spegnimento automatico", enabledText(data.pumpSettings?.autoShutdownEnabled))
+			SettingsCard("Limits and behavior") {
+				data.basalLimitUnitsPerHour?.let { SettingLine("Maximum basal rate", "${format3(it)} U/h") }
+				data.maxBolusUnits?.let { SettingLine("Maximum bolus", "${format2(it)} U") }
+				data.pumpSettings?.lowInsulinThreshold?.let { SettingLine("Low insulin threshold", "$it U") }
+				data.pumpSettings?.cannulaPrimeSize?.let { SettingLine("Cannula fill", "${format2(it / 100.0)} U") }
+				SettingLine("Auto-off", enabledText(data.pumpSettings?.autoShutdownEnabled))
 			}
 		}
 
 		data.cgmSettings?.let { cgm ->
 			item {
 				SettingsCard("CGM") {
-					SettingLine("Avviso alto", alertText(cgm.highGlucoseAlertEnabled, cgm.highGlucoseAlertMgPerDl, data.glucoseUnit))
-					SettingLine("Avviso basso", alertText(cgm.lowGlucoseAlertEnabled, cgm.lowGlucoseAlertMgPerDl, data.glucoseUnit))
-					SettingLine("Avviso salita", enabledText(cgm.riseRateAlertEnabled))
-					SettingLine("Avviso discesa", enabledText(cgm.fallRateAlertEnabled))
-					SettingLine("Timeout sensore", if (cgm.sensorTimeoutEnabled == true) "${cgm.sensorTimeoutMinutes ?: 0} min" else "Disattivato")
+					SettingLine("High alert", alertText(cgm.highGlucoseAlertEnabled, cgm.highGlucoseAlertMgPerDl, data.glucoseUnit))
+					SettingLine("Low alert", alertText(cgm.lowGlucoseAlertEnabled, cgm.lowGlucoseAlertMgPerDl, data.glucoseUnit))
+					SettingLine("Rise alert", enabledText(cgm.riseRateAlertEnabled))
+					SettingLine("Fall alert", enabledText(cgm.fallRateAlertEnabled))
+					SettingLine("Sensor timeout", if (cgm.sensorTimeoutEnabled == true) "${cgm.sensorTimeoutMinutes ?: 0} min" else "Disabled")
 				}
 			}
 		}
 
 		data.reminders?.let { reminders ->
 			item {
-				SettingsCard("Promemoria") {
-					SettingLine("Cambio sito", if (reminders.siteChangeReminder?.enabled == true) "Ogni ${reminders.siteChangeDays ?: 0} giorni" else "Disattivato")
-					SettingLine("Glicemia bassa", enabledText(reminders.lowBgReminder?.enabled))
-					SettingLine("Glicemia alta", enabledText(reminders.highBgReminder?.enabled))
-					SettingLine("Dopo bolo", enabledText(reminders.afterBolusReminder?.enabled))
-					SettingLine("Bolo mancato", if (reminders.missedBolusReminders.any { it.enabled }) "Attivato" else "Disattivato")
+				SettingsCard("Reminders") {
+					SettingLine("Site change", if (reminders.siteChangeReminder?.enabled == true) "Every ${reminders.siteChangeDays ?: 0} days" else "Disabled")
+					SettingLine("Low glucose", enabledText(reminders.lowBgReminder?.enabled))
+					SettingLine("High glucose", enabledText(reminders.highBgReminder?.enabled))
+					SettingLine("After bolus", enabledText(reminders.afterBolusReminder?.enabled))
+					SettingLine("Missed bolus", if (reminders.missedBolusReminders.any { it.enabled }) "Enabled" else "Disabled")
 				}
 			}
 		}
@@ -179,13 +179,13 @@ private fun GeneralPumpSettings(data: PumpSettingsData) {
 }
 
 private fun formatPumpDataTimestamp(value: String?): String {
-	if (value.isNullOrBlank()) return "Non disponibile"
+	if (value.isNullOrBlank()) return "Not available"
 	val zone = ZoneId.systemDefault()
 	val dateTime = runCatching { Instant.parse(value).atZone(zone) }.getOrNull()
 		?: runCatching { OffsetDateTime.parse(value).atZoneSameInstant(zone) }.getOrNull()
 		?: runCatching { LocalDateTime.parse(value).atZone(zone) }.getOrNull()
 		?: return value
-	return dateTime.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm z", Locale.ITALIAN))
+	return dateTime.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm z", Locale.ENGLISH))
 }
 
 @Composable
@@ -196,11 +196,11 @@ private fun ProfileSettings(profile: PumpProfile, glucoseUnit: String) {
 	) {
 		item {
 			SettingsCard(profile.name, collapsible = false) {
-				if (profile.isActive) Text("● Attivo", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-				SettingLine("Basale totale giornaliera", "${format3(profile.dailyBasalUnits)} U")
-				SettingLine("Durata insulina", durationText(profile.insulinDurationMinutes))
-				SettingLine("Bolo massimo", "${format2(profile.maxBolusUnits)} U")
-				SettingLine("Carboidrati", if (profile.carbEntryEnabled) "Attivato" else "Disattivato")
+				if (profile.isActive) Text("● Active", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+				SettingLine("Total daily basal", "${format3(profile.dailyBasalUnits)} U")
+				SettingLine("Insulin duration", durationText(profile.insulinDurationMinutes))
+				SettingLine("Maximum bolus", "${format2(profile.maxBolusUnits)} U")
+				SettingLine("Carbohydrates", if (profile.carbEntryEnabled) "Enabled" else "Disabled")
 			}
 		}
 		item { ProfileSegmentsTable(profile.segments, glucoseUnit) }
@@ -212,10 +212,10 @@ private fun ProfileSegmentsTable(segments: List<PumpProfileSegment>, glucoseUnit
 	Card(modifier = Modifier.fillMaxWidth()) {
 		Column(modifier = Modifier.padding(12.dp).horizontalScroll(rememberScrollState())) {
 			Row {
-				TableCell("Ora", 70.dp, true)
-				TableCell("Basale U/h", 105.dp, true)
-				TableCell("Correzione", 105.dp, true)
-				TableCell("Rapporto I:C", 115.dp, true)
+				TableCell("Time", 70.dp, true)
+				TableCell("Basal U/h", 105.dp, true)
+				TableCell("Correction", 105.dp, true)
+				TableCell("I:C ratio", 115.dp, true)
 				TableCell("Target $glucoseUnit", 120.dp, true)
 			}
 			HorizontalDivider()
@@ -279,9 +279,9 @@ private fun TableCell(text: String, width: Dp, header: Boolean = false) {
 }
 
 private fun enabledText(value: Boolean?): String = when (value) {
-	true -> "Attivato"
-	false -> "Disattivato"
-	null -> "Non disponibile"
+	true -> "Enabled"
+	false -> "Disabled"
+	null -> "Not available"
 }
 
 private fun alertText(enabled: Boolean?, threshold: Int?, unit: String): String =
@@ -289,6 +289,6 @@ private fun alertText(enabled: Boolean?, threshold: Int?, unit: String): String 
 
 private fun minutesToTime(value: Int): String = "%02d:%02d".format(value / 60, value % 60)
 private fun durationText(value: Int): String = if (value % 60 == 0) "${value / 60} h" else "${value / 60} h ${value % 60} min"
-private fun format1(value: Double): String = String.format(Locale.ITALY, "%.1f", value)
-private fun format2(value: Double): String = String.format(Locale.ITALY, "%.2f", value)
-private fun format3(value: Double): String = String.format(Locale.ITALY, "%.3f", value)
+private fun format1(value: Double): String = String.format(Locale.US, "%.1f", value)
+private fun format2(value: Double): String = String.format(Locale.US, "%.2f", value)
+private fun format3(value: Double): String = String.format(Locale.US, "%.3f", value)

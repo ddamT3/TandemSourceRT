@@ -95,7 +95,7 @@ fun AppRoot(vm: HomeViewModel) {
 		val requestSerial = ++pumpSettingsRequestSerial
 		if (loginEmail.isBlank() || loginPassword.isBlank()) {
 			if (requestSerial == pumpSettingsRequestSerial) {
-				pumpSettingsState = PumpSettingsUiState.Error("Credenziali mancanti")
+				pumpSettingsState = PumpSettingsUiState.Error("Missing credentials")
 			}
 			return
 		}

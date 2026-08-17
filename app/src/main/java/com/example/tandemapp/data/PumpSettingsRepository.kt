@@ -9,6 +9,7 @@ import com.example.tandemapp.model.PumpSettingsCacheDto
 import com.example.tandemapp.model.PumpSettingsData
 import com.example.tandemapp.model.ReportsPumperDto
 import com.example.tandemapp.model.ReportsPumpDto
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -20,6 +21,14 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 data class TandemAuthContext(val accessToken: String, val pumperId: String)
 
@@ -38,6 +47,7 @@ class PumpSettingsRepository(
 	private val authProvider: suspend (String, String) -> TandemAuthContextResult
 ) {
 	private val json = Json { ignoreUnknownKeys = true }
+	private val prettyJson = Json { prettyPrint = true }
 	private val cacheFile = context.applicationContext.filesDir.resolve("latest_pump_settings.json")
 
 	suspend fun loadCurrent(
@@ -53,14 +63,14 @@ class PumpSettingsRepository(
 				if (cached != null) return@withContext PumpSettingsResult.Success(
 					mapPump(cached.pump, requestedDate, cached.readAt, true)
 				)
-				return@withContext PumpSettingsResult.Failure(result.message)
+				return@withContext PumpSettingsResult.Failure("Tandem authentication failed")
 			}
 		}
 
 		try {
 			val reports = getReportsPumper(auth)
 			val currentPump = selectCurrentPump(reports.pumps)
-				?: throw IllegalStateException("Nessuna impostazione pompa disponibile")
+				?: throw IllegalStateException("No pump settings available")
 
 			val readAt = Instant.now().toString()
 			val pumpToShow = if (cached != null && settingsTimestamp(cached.pump) > settingsTimestamp(currentPump)) {
@@ -78,22 +88,64 @@ class PumpSettingsRepository(
 				mapPump(pumpToShow, requestedDate, effectiveReadAt, false)
 			)
 		} catch (e: Exception) {
-			Log.e("PumpSettingsRepo", "Caricamento settings fallito per $requestedDate", e)
+			Log.e("PumpSettingsRepo", "Failed to load pump settings for $requestedDate", e)
 			if (cached != null) {
 				PumpSettingsResult.Success(mapPump(cached.pump, requestedDate, cached.readAt, true))
 			} else {
-				PumpSettingsResult.Failure(e.message ?: "Caricamento impostazioni pompa non riuscito")
+				PumpSettingsResult.Failure(e.message ?: "Unable to load pump settings")
 			}
 		}
 	}
 
 	private fun getReportsPumper(auth: TandemAuthContext): ReportsPumperDto {
-		val body = getJson(
+		return json.decodeFromString(ReportsPumperDto.serializer(), getReportsPumperJson(auth))
+	}
+
+	fun exportRaw(auth: TandemAuthContext, exportDir: File): File {
+		val root = json.parseToJsonElement(getReportsPumperJson(auth)).jsonObject
+		val pump = root["pumps"]?.jsonArray.orEmpty()
+			.map { it.jsonObject }
+			.filter { it["settings"] != null && it["settings"] != JsonNull }
+			.maxByOrNull { rawPumpTimestamp(it) }
+			?: throw IllegalStateException("No pump with settings available")
+		if (!exportDir.exists() && !exportDir.mkdirs()) {
+			throw IllegalStateException("Unable to create export directory")
+		}
+		val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+			.withZone(ZoneOffset.UTC).format(Instant.now())
+		val assignmentId = pump["assignmentId"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+		val serialNumber = pump["serialNumber"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+		val payload = buildJsonObject {
+				put("source", "reports-bff-pumper")
+				put("pumperId", auth.pumperId)
+				put("assignmentId", assignmentId)
+				put("serialNumber", serialNumber)
+				put("modelNumber", pump["modelNumber"] ?: JsonNull)
+				put("modelName", pump["modelName"] ?: JsonNull)
+				put("assignedAt", pump["assignedAt"] ?: JsonNull)
+				put("lastUpload", pump["lastUpload"] ?: pump["lastUploadDate"] ?: JsonNull)
+				put("settings", pump["settings"] ?: JsonNull)
+		}
+		return File(
+			exportDir,
+			"pump_settings_${safeFilenamePart(serialNumber)}_" +
+				"${safeFilenamePart(assignmentId)}_${timestamp}.json"
+		).apply { writeText(prettyJson.encodeToString(payload), Charsets.UTF_8) }
+	}
+
+	private fun rawPumpTimestamp(pump: kotlinx.serialization.json.JsonObject): Long {
+		val lastUpload = pump["lastUpload"]?.jsonPrimitive?.contentOrNull
+			?: pump["lastUploadDate"]?.jsonPrimitive?.contentOrNull
+		val settingsTimestamp = pump["settings"]?.jsonObject
+			?.get("uploadedTimeStamp")?.jsonPrimitive?.contentOrNull
+		return parseTimestamp(lastUpload) ?: parseTimestamp(settingsTimestamp) ?: Long.MIN_VALUE
+	}
+
+	private fun getReportsPumperJson(auth: TandemAuthContext): String =
+		getJson(
 			"https://source.eu.tandemdiabetes.com/api/reports/bff/pumper/${auth.pumperId}",
 			auth.accessToken
 		)
-		return json.decodeFromString(ReportsPumperDto.serializer(), body)
-	}
 
 	private fun getJson(url: String, accessToken: String): String {
 		val connection = URL(url).openConnection() as HttpURLConnection
@@ -109,7 +161,7 @@ class PumpSettingsRepository(
 			val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
 				?.bufferedReader()?.use { it.readText() }.orEmpty()
 			if (status != HttpURLConnection.HTTP_OK) {
-				throw IllegalStateException("Errore Pump Settings HTTP $status")
+				throw IllegalStateException("Pump Settings HTTP error $status")
 			}
 			body
 		} finally {
@@ -138,7 +190,7 @@ class PumpSettingsRepository(
 			readAt = readAt,
 			isFromCache = isFromCache,
 			serialNumber = pump.serialNumber,
-			modelName = pump.modelName ?: "Pompa Tandem",
+			modelName = pump.modelName ?: "Tandem pump",
 			softwareVersion = pump.softwareVersion,
 			algorithm = pump.algorithm,
 			lastUploadDate = pump.lastUploadDate ?: pump.lastUpload,
@@ -209,4 +261,7 @@ class PumpSettingsRepository(
 			?: runCatching { OffsetDateTime.parse(raw).toInstant().toEpochMilli() }.getOrNull()
 			?: runCatching { LocalDateTime.parse(raw).toInstant(ZoneOffset.UTC).toEpochMilli() }.getOrNull()
 	}
+
+	private fun safeFilenamePart(value: String): String =
+		value.replace(Regex("[^A-Za-z0-9._-]+"), "_")
 }

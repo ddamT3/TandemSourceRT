@@ -3,7 +3,6 @@ package com.example.tandemapp.data
 import android.content.Context
 import android.os.Environment
 import android.util.Log
-import com.chaquo.python.PyException
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.example.tandemapp.model.DayDataset
@@ -66,21 +65,6 @@ class EmbeddedTandemRepository(
 		return exportDir
 	}
 
-	private fun parseExportResponse(responseText: String): String {
-		val root = json.parseToJsonElement(responseText).jsonObject
-		val status = root["status"]?.jsonPrimitive?.contentOrNull
-		val type = root["type"]?.jsonPrimitive?.contentOrNull ?: "export"
-
-		if (status == "ok") {
-			val path = root["path"]?.jsonPrimitive?.contentOrNull ?: "saved file"
-			return "$type saved: $path"
-		}
-
-		val detail = root["detail"]?.jsonObject
-		val message = detail?.get("message")?.jsonPrimitive?.contentOrNull ?: responseText
-		return "$type failed: $message"
-	}
-
 	suspend fun getAuthenticatedContext(username: String, password: String): TandemAuthContextResult =
 		withContext(Dispatchers.IO) {
 			try {
@@ -112,42 +96,35 @@ class EmbeddedTandemRepository(
 
 
 	suspend fun exportPumpEventsJson(username: String, password: String, selectedDate: LocalDate? = null): String = withContext(Dispatchers.IO) {
-		try {
-			ensurePythonStarted()
-			val py = Python.getInstance()
-			val module = py.getModule("tandem_embedded")
-			Log.d(tag, "export_pump_logs_json selectedDate=$selectedDate")
-
-			val responseText = module
-				.callAttr("export_pump_logs_json", username, password, exportDirectory().absolutePath, selectedDate?.toString())
-				.toJava(String::class.java)
-
-			return@withContext parseExportResponse(responseText)
-		} catch (e: PyException) {
-			Log.e(tag, "Errore Python export pump logs JSON", e)
-			return@withContext "Events JSON failed: ${e.message}"
+		val auth = when (val result = getAuthenticatedContext(username, password)) {
+			is TandemAuthContextResult.Success -> result.context
+			is TandemAuthContextResult.Failure -> return@withContext "Events JSON failed: ${result.message}"
+		}
+		return@withContext try {
+			val result = PumpEventsRepository().exportRaw(auth, selectedDate, exportDirectory())
+			if (result.files.isEmpty()) {
+				"No events returned for the selected period; no file was created."
+			} else {
+				"Events JSON saved: ${result.files.size} file(s) in ${exportDirectory().absolutePath}"
+			}
 		} catch (e: Exception) {
-			Log.e(tag, "Errore export pump logs JSON", e)
-			return@withContext "Events JSON failed: ${e.message}"
+			Log.e(tag, "Kotlin pump-event JSON export failed", e)
+			"Events JSON failed: ${e.message}"
 		}
 	}
 
 	suspend fun exportPumpSettingsJson(username: String, password: String): String = withContext(Dispatchers.IO) {
-		try {
-			ensurePythonStarted()
-			val py = Python.getInstance()
-			val module = py.getModule("tandem_embedded")
-			val responseText = module
-				.callAttr("export_pump_settings_json", username, password, exportDirectory().absolutePath)
-				.toJava(String::class.java)
-
-			return@withContext parseExportResponse(responseText)
-		} catch (e: PyException) {
-			Log.e(tag, "Errore Python export pump settings JSON", e)
-			return@withContext "Settings JSON failed: ${e.message}"
+		val auth = when (val result = getAuthenticatedContext(username, password)) {
+			is TandemAuthContextResult.Success -> result.context
+			is TandemAuthContextResult.Failure -> return@withContext "Settings JSON failed: ${result.message}"
+		}
+		return@withContext try {
+			val repository = PumpSettingsRepository(context.applicationContext, ::getAuthenticatedContext)
+			repository.exportRaw(auth, exportDirectory())
+			"Settings JSON saved: 1 file in ${exportDirectory().absolutePath}"
 		} catch (e: Exception) {
-			Log.e(tag, "Errore export pump settings JSON", e)
-			return@withContext "Settings JSON failed: ${e.message}"
+			Log.e(tag, "Kotlin pump-settings JSON export failed", e)
+			"Settings JSON failed: ${e.message}"
 		}
 	}
 
