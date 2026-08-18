@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -28,15 +28,22 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.example.tandemapp.data.EmbeddedTandemRepository
+import com.example.tandemapp.data.ChartDataCacheRepository
 import com.example.tandemapp.data.LiveHistoryResult
 import com.example.tandemapp.data.PumpSettingsRepository
 import com.example.tandemapp.data.PumpSettingsResult
+import com.example.tandemapp.data.SensorSetRepository
 import com.example.tandemapp.model.PumpSettingsUiState
+import com.example.tandemapp.model.SensorSetUiState
 import com.example.tandemapp.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Row
@@ -45,6 +52,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.height
@@ -58,6 +66,8 @@ fun AppRoot(vm: HomeViewModel) {
 	var calendarExportMessage by remember { mutableStateOf<String?>(null) }
 	var pumpSettingsExportMessage by remember { mutableStateOf<String?>(null) }
 	var pumpSettingsState by remember { mutableStateOf<PumpSettingsUiState>(PumpSettingsUiState.Idle) }
+	var sensorSetState by remember { mutableStateOf<SensorSetUiState>(SensorSetUiState.Idle) }
+	var homeDataStatus by remember { mutableStateOf<PageDataStatus?>(null) }
 	var pumpSettingsRequestSerial by remember { mutableStateOf(0L) }
 
 	val context = LocalContext.current
@@ -73,7 +83,19 @@ fun AppRoot(vm: HomeViewModel) {
 	val pumpSettingsRepo = remember(context, apiRepo) {
 		PumpSettingsRepository(context.applicationContext, apiRepo::getAuthenticatedContext)
 	}
+	val sensorSetRepo = remember(context) { SensorSetRepository(context.applicationContext) }
+	val chartCacheRepo = remember(context) { ChartDataCacheRepository(context.applicationContext) }
 	val scope = rememberCoroutineScope()
+	val pageDataStatus = when (currentScreen) {
+		AppScreen.Home -> homeDataStatus
+		AppScreen.PumpSettings -> (pumpSettingsState as? PumpSettingsUiState.Ready)?.data?.let {
+			if (it.isFromCache) PageDataStatus.Cached else PageDataStatus.Updated
+		}
+		AppScreen.SensorSet -> (sensorSetState as? SensorSetUiState.Ready)?.data?.let {
+			if (it.isFromCache) PageDataStatus.Cached else PageDataStatus.Updated
+		}
+		else -> null
+	}
 
 	val prefs = remember {
 		context.getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
@@ -107,8 +129,47 @@ fun AppRoot(vm: HomeViewModel) {
 		if (requestSerial == pumpSettingsRequestSerial) pumpSettingsState = loadedState
 	}
 
+	suspend fun loadSensorSet(loadSettings: Boolean = true) {
+		val cached = sensorSetRepo.readCached()
+		if (cached != null) sensorSetState = SensorSetUiState.Ready(cached)
+		else sensorSetState = SensorSetUiState.Loading
+		if (loginEmail.isBlank() || loginPassword.isBlank()) {
+			if (cached == null) sensorSetState = SensorSetUiState.Error("Missing credentials")
+			return
+		}
+
+		val eventsResult = apiRepo.loadLiveHistory(loginEmail, loginPassword, LocalDate.now())
+		val settingsData = if (loadSettings) {
+			when (val settingsResult = pumpSettingsRepo.loadCurrent(loginEmail, loginPassword)) {
+				is PumpSettingsResult.Success -> {
+					pumpSettingsState = PumpSettingsUiState.Ready(settingsResult.data)
+					settingsResult.data
+				}
+				is PumpSettingsResult.Failure -> null
+			}
+		} else {
+			(pumpSettingsState as? PumpSettingsUiState.Ready)?.data
+		}
+		if (eventsResult is LiveHistoryResult.Success) {
+			val updated = sensorSetRepo.update(eventsResult.dataset, settingsData)
+			sensorSetState = updated?.let { SensorSetUiState.Ready(it) }
+				?: cached?.let { SensorSetUiState.Ready(it) }
+				?: SensorSetUiState.Error("No sensor or infusion set data available")
+		} else if (cached == null) {
+			sensorSetState = SensorSetUiState.Error("Unable to load sensor and infusion set data")
+		}
+	}
+
 	LaunchedEffect(Unit) {
 		if (loginRememberMe && loginEmail.isNotBlank() && loginPassword.isNotBlank()) {
+			val cachedChart = chartCacheRepo.read()
+			if (cachedChart != null) {
+				val today = LocalDate.now()
+				vm.setLiveData(cachedChart, today)
+				homeDataStatus = PageDataStatus.Cached
+				vm.jumpToLatest()
+				currentScreen = AppScreen.Home
+			}
 			try {
 				val today = LocalDate.now()
 				val result = apiRepo.loadLiveHistory(
@@ -118,20 +179,33 @@ fun AppRoot(vm: HomeViewModel) {
 				)
 
 				if (result is LiveHistoryResult.Success) {
+					loginError = AUTH_SUCCESS_MESSAGE
+					val cachedResult = chartCacheRepo.update(result.dataset)
 					vm.selectAnchorDate(today)
-					vm.setLiveData(result.dataset, today)
+					vm.setLiveData(cachedResult.dataset, today)
+					homeDataStatus = PageDataStatus.Updated
+					sensorSetRepo.update(result.dataset, null)?.let {
+						sensorSetState = SensorSetUiState.Ready(it)
+					}
 					vm.jumpToLatest()
 					currentScreen = AppScreen.Home
 				} else {
 					loginError = when (result) {
-						is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
-						is LiveHistoryResult.DataFailure -> "Autenticazione riuscita, caricamento dati non riuscito"
+						is LiveHistoryResult.AuthenticationFailure -> if (isNetworkAvailable(context)) {
+							"Tandem authentication failed."
+						} else "No connection. Cached data is available."
+						is LiveHistoryResult.DataFailure -> if (isNetworkAvailable(context)) {
+							"Authentication succeeded, data loading failed."
+						} else "No connection. Cached data is available."
 						is LiveHistoryResult.Success -> null
 					}
-					currentScreen = AppScreen.Login
+					if (cachedChart == null) currentScreen = AppScreen.Login
 				}
 			} catch (e: Exception) {
-				currentScreen = AppScreen.Login
+				loginError = if (isNetworkAvailable(context)) {
+					"Unable to update data."
+				} else "No connection. Cached data is available."
+				if (cachedChart == null) currentScreen = AppScreen.Login
 			}
 		}
 	}
@@ -145,15 +219,28 @@ fun AppRoot(vm: HomeViewModel) {
 					.padding(horizontal = GlucoseChartLayout.HomeUi.adaptiveHorizontalPadding(configuration.screenWidthDp.dp)),
 				contentAlignment = Alignment.BottomStart
 			) {
-				Text(
-					text = currentScreen.title,
-					style = MaterialTheme.typography.titleLarge,
-					fontWeight = FontWeight.Bold,
-					fontSize = GlucoseChartLayout.HomeUi.topBarTitleFontSize,
-					modifier = Modifier.padding(
+				Row(
+					modifier = Modifier.fillMaxWidth().padding(
 						bottom = GlucoseChartLayout.HomeUi.topBarTitleBottomPadding
+					),
+					horizontalArrangement = Arrangement.SpaceBetween,
+					verticalAlignment = Alignment.CenterVertically
+				) {
+					Text(
+						text = currentScreen.title,
+						style = MaterialTheme.typography.titleLarge,
+						fontWeight = FontWeight.Bold,
+						fontSize = GlucoseChartLayout.HomeUi.topBarTitleFontSize
 					)
-				)
+					pageDataStatus?.let { status ->
+						Text(
+							text = status.label,
+							color = status.color,
+							fontSize = 16.sp,
+							fontWeight = FontWeight.Normal
+						)
+					}
+				}
 			}
 		},
 		bottomBar = {
@@ -178,23 +265,23 @@ fun AppRoot(vm: HomeViewModel) {
 					selected = currentScreen == AppScreen.PumpSettings,
 					onClick = {
 						currentScreen = AppScreen.PumpSettings
-						scope.launch { loadPumpSettings() }
+						scope.launch {
+							loadPumpSettings()
+							loadSensorSet(loadSettings = false)
+						}
 					},
 					icon = { PumpIcon() },
 					label = { Text("Pump", fontSize = 10.sp) }
 				)
 
 				NavigationBarItem(
-					selected = currentScreen == AppScreen.AppSettings,
-					onClick = { currentScreen = AppScreen.AppSettings },
-					icon = {
-						Icon(
-							imageVector = Icons.Outlined.Settings,
-							contentDescription = "Settings",
-							modifier = Modifier.size(21.dp)
-						)
+					selected = currentScreen == AppScreen.SensorSet,
+					onClick = {
+						currentScreen = AppScreen.SensorSet
+						scope.launch { loadSensorSet() }
 					},
-					label = { Text("Settings", fontSize = 10.sp) }
+					icon = { SensorSetIcon() },
+					label = { Text("Sensor Set", fontSize = 10.sp) }
 				)
 
 				NavigationBarItem(
@@ -236,7 +323,16 @@ fun AppRoot(vm: HomeViewModel) {
 						)
 
 				if (result is LiveHistoryResult.Success) {
-					vm.setLiveData(result.dataset, vm.state.value.anchorDate)
+					loginError = AUTH_SUCCESS_MESSAGE
+					val anchorDate = vm.state.value.anchorDate
+					if (isCurrentRequestWindow(anchorDate)) {
+						val cachedResult = chartCacheRepo.update(result.dataset)
+						vm.setLiveData(cachedResult.dataset, anchorDate)
+						homeDataStatus = PageDataStatus.Updated
+					} else {
+						vm.setLiveData(result.dataset, anchorDate)
+						homeDataStatus = PageDataStatus.Historical
+					}
 				} else {
 					loginError = when (result) {
 						is LiveHistoryResult.AuthenticationFailure -> "Autenticazione Tandem non riuscita"
@@ -250,6 +346,7 @@ fun AppRoot(vm: HomeViewModel) {
 
 			AppScreen.Calendar -> CalendarScreen(
 				vm = vm,
+				availableDateColor = homeDataStatus?.color ?: PageDataStatus.Updated.color,
 				onApply = { selectedDate ->
 					scope.launch {
 						val email = prefs.getString("email", "") ?: ""
@@ -272,7 +369,15 @@ fun AppRoot(vm: HomeViewModel) {
 						)
 
 						if (result is LiveHistoryResult.Success) {
-							vm.setLiveData(result.dataset, selectedDate)
+							loginError = AUTH_SUCCESS_MESSAGE
+							if (isCurrentRequestWindow(selectedDate)) {
+								val cachedResult = chartCacheRepo.update(result.dataset)
+								vm.setLiveData(cachedResult.dataset, selectedDate)
+								homeDataStatus = PageDataStatus.Updated
+							} else {
+								vm.setLiveData(result.dataset, selectedDate)
+								homeDataStatus = PageDataStatus.Historical
+							}
 							currentScreen = AppScreen.Home
 						} else {
 							loginError = when (result) {
@@ -307,15 +412,14 @@ fun AppRoot(vm: HomeViewModel) {
 			AppScreen.PumpSettings -> PumpSettingsScreen(
 				state = pumpSettingsState,
 				modifier = Modifier.padding(innerPadding),
+				batteryPercent = (sensorSetState as? SensorSetUiState.Ready)?.data?.batteryPercent,
+				batteryTimestamp = (sensorSetState as? SensorSetUiState.Ready)?.data?.batteryTimestamp,
 				onRetry = {
 					scope.launch {
 						loadPumpSettings()
+						loadSensorSet(loadSettings = false)
 					}
-				}
-			)
-
-			AppScreen.AppSettings -> AppSettingsScreen(
-				modifier = Modifier.padding(innerPadding),
+				},
 				pumpSettingsExportMessage = pumpSettingsExportMessage,
 				onDownloadPumpSettingsJson = {
 					scope.launch {
@@ -330,12 +434,18 @@ fun AppRoot(vm: HomeViewModel) {
 				}
 			)
 
+			AppScreen.SensorSet -> SensorSetScreen(
+				state = sensorSetState,
+				modifier = Modifier.padding(innerPadding)
+			)
+
 			AppScreen.Login -> LoginScreen(
 				modifier = Modifier.padding(innerPadding),
 				email = loginEmail,
 				password = loginPassword,
 				rememberMe = loginRememberMe,
 				errorMessage = loginError,
+				messageIsSuccess = loginError == AUTH_SUCCESS_MESSAGE,
 				onEmailChange = { newEmail ->
 					loginEmail = newEmail
 					pumpSettingsState = PumpSettingsUiState.Idle
@@ -391,7 +501,16 @@ fun AppRoot(vm: HomeViewModel) {
 						)
 
 						if (result is LiveHistoryResult.Success) {
-							vm.setLiveData(result.dataset, vm.state.value.anchorDate)
+							loginError = AUTH_SUCCESS_MESSAGE
+							val anchorDate = vm.state.value.anchorDate
+							if (isCurrentRequestWindow(anchorDate)) {
+								val cachedResult = chartCacheRepo.update(result.dataset)
+								vm.setLiveData(cachedResult.dataset, anchorDate)
+								homeDataStatus = PageDataStatus.Updated
+							} else {
+								vm.setLiveData(result.dataset, anchorDate)
+								homeDataStatus = PageDataStatus.Historical
+							}
 							currentScreen = AppScreen.Home
 						} else {
 							loginError = when (result) {
@@ -405,6 +524,26 @@ fun AppRoot(vm: HomeViewModel) {
 			)
 		}
 	}
+}
+
+private enum class PageDataStatus(val label: String, val color: Color) {
+	Cached("Data Cached", Color(0xFFC62828)),
+	Updated("Data Updated", Color(0xFF2E7D32)),
+	Historical("Historical", Color(0xFFEF6C00))
+}
+
+private const val AUTH_SUCCESS_MESSAGE = "Authentication succeeded, data available"
+
+private fun isCurrentRequestWindow(selectedDate: LocalDate): Boolean =
+	!selectedDate.plusDays(7).isBefore(LocalDate.now())
+
+private fun isNetworkAvailable(context: Context): Boolean {
+	val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+		?: return false
+	val network = manager.activeNetwork ?: return false
+	val capabilities = manager.getNetworkCapabilities(network) ?: return false
+	return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+		capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 @Composable
@@ -450,6 +589,55 @@ private fun DashboardChartIcon(
 			radius = w * 0.07f,
 			center = p4
 		)
+	}
+}
+
+@Composable
+private fun SensorSetIcon(modifier: Modifier = Modifier) {
+	val tint = LocalContentColor.current
+	Canvas(modifier = modifier.size(24.dp)) {
+		val stroke = size.minDimension * 0.075f
+
+		// Rounded CGM sensor.
+		drawOval(
+			color = tint,
+			topLeft = Offset(size.width * 0.03f, size.height * 0.27f),
+			size = Size(size.width * 0.38f, size.height * 0.46f),
+			style = Stroke(width = stroke)
+		)
+		drawCircle(
+			color = tint,
+			radius = size.minDimension * 0.045f,
+			center = Offset(size.width * 0.22f, size.height * 0.55f)
+		)
+
+		// Infusion-set symbol from the chart legend.
+		val setCenter = Offset(size.width * 0.76f, size.height * 0.55f)
+		val setRadius = size.minDimension * 0.21f
+		drawCircle(color = tint, radius = setRadius, center = setCenter, style = Stroke(width = stroke))
+		drawLine(
+			color = tint,
+			start = Offset(setCenter.x - setRadius, setCenter.y),
+			end = Offset(setCenter.x, setCenter.y),
+			strokeWidth = stroke
+		)
+		val sector = Path().apply {
+			moveTo(setCenter.x, setCenter.y - setRadius * 0.66f)
+			quadraticBezierTo(
+				setCenter.x + setRadius * 0.92f,
+				setCenter.y,
+				setCenter.x,
+				setCenter.y + setRadius * 0.66f
+			)
+			quadraticBezierTo(
+				setCenter.x + setRadius * 0.30f,
+				setCenter.y,
+				setCenter.x,
+				setCenter.y - setRadius * 0.66f
+			)
+			close()
+		}
+		drawPath(sector, color = tint)
 	}
 }
 

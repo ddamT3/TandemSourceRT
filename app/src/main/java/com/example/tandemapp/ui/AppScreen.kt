@@ -4,6 +4,6 @@ enum class AppScreen(val title: String) {
 	Home("Dashboard"),
 	Calendar("Calendar"),
 	PumpSettings("Pump settings"),
-	AppSettings("Settings"),
+	SensorSet("Sensor & Set"),
 	Login("Login")
 }

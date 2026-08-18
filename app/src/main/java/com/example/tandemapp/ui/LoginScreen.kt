@@ -21,9 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.tandemapp.st.BuildConfig
+import java.util.Locale
 
 @Composable
 fun LoginScreen(
@@ -32,6 +35,7 @@ fun LoginScreen(
 	password: String,
 	rememberMe: Boolean,
 	errorMessage: String? = null,
+	messageIsSuccess: Boolean = false,
 	onEmailChange: (String) -> Unit,
 	onPasswordChange: (String) -> Unit,
 	onRememberMeChange: (Boolean) -> Unit,
@@ -42,75 +46,97 @@ fun LoginScreen(
 	Column(
 		modifier = modifier
 			.fillMaxSize()
-			.padding(16.dp),
-		verticalArrangement = Arrangement.Center
+			.padding(16.dp)
 	) {
-		Card(
-			modifier = Modifier.fillMaxWidth()
+		Column(
+			modifier = Modifier.fillMaxWidth().weight(1f),
+			verticalArrangement = Arrangement.Center
 		) {
-			Column(
-				modifier = Modifier
-					.fillMaxWidth()
-					.padding(20.dp),
-				verticalArrangement = Arrangement.spacedBy(12.dp)
+			Card(modifier = Modifier.fillMaxWidth()) {
+				Column(
+					modifier = Modifier
+						.fillMaxWidth()
+						.padding(20.dp),
+					verticalArrangement = Arrangement.spacedBy(12.dp)
+				) {
+					Text(
+						text = "Login",
+						style = MaterialTheme.typography.headlineSmall
+					)
+
+					OutlinedTextField(
+						value = email,
+						onValueChange = onEmailChange,
+						label = { Text("Email") },
+						modifier = Modifier.fillMaxWidth(),
+						singleLine = true
+					)
+
+					OutlinedTextField(
+						value = password,
+						onValueChange = onPasswordChange,
+						label = { Text("Password") },
+						visualTransformation = if (passwordVisible) {
+							VisualTransformation.None
+						} else {
+							PasswordVisualTransformation()
+						},
+						trailingIcon = {
+							TextButton(onClick = { passwordVisible = !passwordVisible }) {
+								Text(if (passwordVisible) "🙈" else "👁")
+							}
+						},
+						modifier = Modifier.fillMaxWidth(),
+						singleLine = true
+					)
+
+					Row(verticalAlignment = Alignment.CenterVertically) {
+						Checkbox(
+							checked = rememberMe,
+							onCheckedChange = onRememberMeChange
+						)
+						Text("Remember me")
+					}
+
+					if (!errorMessage.isNullOrBlank()) {
+						Text(
+							text = errorMessage,
+							color = if (messageIsSuccess) Color(0xFF2E7D32) else Color(0xFFB3261E),
+							style = MaterialTheme.typography.bodyMedium
+						)
+					}
+
+					Button(
+						onClick = { onSignInClick(email, password, rememberMe) },
+						modifier = Modifier.fillMaxWidth()
+					) {
+						Text("Sign in")
+					}
+				}
+			}
+		}
+
+		Card(modifier = Modifier.fillMaxWidth()) {
+			Row(
+				modifier = Modifier.fillMaxWidth().padding(16.dp),
+				horizontalArrangement = Arrangement.SpaceBetween,
+				verticalAlignment = Alignment.CenterVertically
 			) {
 				Text(
-					text = "Login",
-					style = MaterialTheme.typography.headlineSmall
+					"App version",
+					style = MaterialTheme.typography.bodyLarge,
+					fontWeight = FontWeight.SemiBold
 				)
-
-				OutlinedTextField(
-					value = email,
-					onValueChange = onEmailChange,
-					label = { Text("Email") },
-					modifier = Modifier.fillMaxWidth(),
-					singleLine = true
+				Text(
+					text = String.format(
+						Locale.US,
+						"v%s.%03d",
+						BuildConfig.VERSION_NAME,
+						BuildConfig.VERSION_CODE % 1000
+					),
+					style = MaterialTheme.typography.bodyLarge,
+					fontWeight = FontWeight.Medium
 				)
-
-				OutlinedTextField(
-					value = password,
-					onValueChange = onPasswordChange,
-					label = { Text("Password") },
-					visualTransformation = if (passwordVisible) {
-						VisualTransformation.None
-					} else {
-						PasswordVisualTransformation()
-					},
-					trailingIcon = {
-						TextButton(onClick = { passwordVisible = !passwordVisible }) {
-							Text(if (passwordVisible) "🙈" else "👁")
-						}
-					},
-					modifier = Modifier.fillMaxWidth(),
-					singleLine = true
-				)
-
-				Row(
-					verticalAlignment = Alignment.CenterVertically
-				) {
-					Checkbox(
-						checked = rememberMe,
-						onCheckedChange = onRememberMeChange
-					)
-					Text("Remember me")
-				}
-
-				if (!errorMessage.isNullOrBlank()) {
-					Text(
-						text = errorMessage,
-						color = Color(0xFFB3261E),
-						style = MaterialTheme.typography.bodyMedium
-					)
-				}
-
-				Button(
-					onClick = {
-						onSignInClick(email, password, rememberMe)
-					},
-					modifier = Modifier.fillMaxWidth()
-				) {
-					Text("Sign in")
-				}
 			}
 		}
 	}

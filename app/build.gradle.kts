@@ -9,7 +9,7 @@ plugins {
 // Versione release letta da buildAPK.bat. I nomi delle due variabili sono
 // intenzionalmente compatibili con le espressioni regolari dello script.
 val release_versionName = "02.01"
-val release_versionCode = 3
+val release_versionCode = 4
 
 val releaseVersionParts = release_versionName.split(".")
 require(releaseVersionParts.size == 2) { "versionName deve usare il formato MM.mm" }
@@ -79,6 +79,7 @@ dependencies {
 	implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 	testImplementation("junit:junit:4.13.2")
 }
+
 
 
 

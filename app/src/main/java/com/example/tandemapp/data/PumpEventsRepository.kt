@@ -113,11 +113,11 @@ class PumpEventsRepository {
 	}
 
 	private fun downloadEvents(auth: TandemAuthContext, assignmentId: String, selectedDate: LocalDate?): String {
-		val today = LocalDate.now(ZoneOffset.UTC)
+		val today = LocalDate.now()
 		val center = selectedDate ?: today
-		val start = center.minusDays(5)
-		val end = minOf(if (center >= today) center else center.plusDays(5), today)
-		val eventIds = "229,5,28,4,26,99,279,3,16,59,21,55,20,280,64,65,66,61,33,371,171,369,460,172,370,461,372,480,399,256,213,406,477,394,212,404,214,405,486,447,313,60,14,6,90,230,140,12,11,53,13,63,203,191,81"
+		val end = minOf(center.plusDays(7), today)
+		val start = end.minusDays(14)
+		val eventIds = "229,5,28,4,26,99,279,3,9,16,59,21,55,20,280,64,65,66,61,33,371,171,369,460,172,370,461,372,480,399,256,213,406,477,394,212,404,214,405,486,447,313,60,14,6,90,230,140,12,11,53,13,63,203,191,81"
 		val query = linkedMapOf(
 			"pumperId" to auth.pumperId,
 			"startDate" to "${start}T00:00:00Z",

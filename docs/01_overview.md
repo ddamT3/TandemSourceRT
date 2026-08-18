@@ -7,8 +7,9 @@ TandemSourceRT is an Android application that authenticates with Tandem Source, 
 - No custom backend server
 - Native Kotlin JSON adaptation
 - Android-first architecture
-- Current-pump selection
+- Current-pump selection and historical browsing
 - BFF JSON as source of truth
+- Offline access to the latest current dataset and device settings
 
 ## High-Level Pipeline
 
@@ -22,4 +23,8 @@ Pump Events / Pump Settings JSON
     ↓
 Kotlin Repository and Adapters
     ↓
-Dataset / Offline Settings Cache / UI
+Normalized Dataset / Latest-Data Caches / UI
+
+The app stores the latest current chart dataset, pump settings, and Sensor Set
+snapshot in Android private storage. Historical
+requests are displayed temporarily and never replace the current cache.

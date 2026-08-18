@@ -7,19 +7,10 @@
 - Ordering uses pump time, sequence group and sequence number.
 - Pump settings and profiles are returned by the reports pumper endpoint.
 - Native Kotlin adapters map explicit BFF values without synthesizing missing data.
-
-## Legacy Binary Findings
-
-The following findings apply to versions through `v01.01.xxx`:
-
-- Tandem event records are 26 bytes.
-- The default encoding is Big Endian.
-- Event 229 ExerciseTime uses Little Endian encoding.
-- Records are not guaranteed to be ordered.
-- Ordering should use timestamp and sequence number.
-- Device state is reconstructed from events 229, 230 and 313.
-- CGM data is generated from event 399.
-- IOB data is generated from event 81.
+- Event 9 exposes remaining insulin and battery percentage in the same
+  pump-status record.
+- Event 61 with completion status 3 identifies a completed infusion-set change.
+- Event 447 is used as the latest sensor-session observation boundary.
 
 ## Time Semantics
 
@@ -28,8 +19,8 @@ Two independent clocks exist:
 - Sensor Time
 - Pump Time
 
-Legacy event blobs exposed only pump-recorded timestamps. Current BFF
-events provide pump and estimated timestamps where supplied by Tandem Source.
+Current BFF events provide pump and estimated timestamps where supplied by
+Tandem Source. Pump time is the canonical application timeline.
 
 Sensor-native timestamps are not currently available.
 
@@ -50,3 +41,8 @@ The decoder generates:
 - Event-driven parsing
 - No estimation
 - No synthetic data generation
+
+The only derived values shown by the current application are identified as
+estimates or configured reminders: sensor end is observed start plus 10 days,
+and set-change reminder time combines the last completed change date with the
+pump reminder configuration.

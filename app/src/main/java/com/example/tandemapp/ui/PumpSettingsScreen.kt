@@ -19,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -42,6 +43,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -49,36 +51,84 @@ import java.util.Locale
 fun PumpSettingsScreen(
 	state: PumpSettingsUiState,
 	modifier: Modifier = Modifier,
-	onRetry: () -> Unit = {}
+	onRetry: () -> Unit = {},
+	batteryPercent: Int? = null,
+	batteryTimestamp: String? = null,
+	pumpSettingsExportMessage: String? = null,
+	onDownloadPumpSettingsJson: () -> Unit = {}
 ) {
 	when (state) {
-		PumpSettingsUiState.Idle,
-		PumpSettingsUiState.Loading -> Column(
-			modifier = modifier.fillMaxSize(),
-			horizontalAlignment = Alignment.CenterHorizontally,
-			verticalArrangement = Arrangement.Center
-		) {
-			CircularProgressIndicator()
-			Spacer(Modifier.height(12.dp))
-			Text("Loading pump settings...")
-		}
+			PumpSettingsUiState.Idle,
+			PumpSettingsUiState.Loading -> Column(
+				modifier = modifier.fillMaxSize(),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.Center
+			) {
+				CircularProgressIndicator()
+				Spacer(Modifier.height(12.dp))
+				Text("Loading pump settings...")
+			}
 
-		is PumpSettingsUiState.Error -> Column(
-			modifier = modifier.fillMaxSize().padding(16.dp),
-			horizontalAlignment = Alignment.CenterHorizontally,
-			verticalArrangement = Arrangement.Center
-		) {
-			Text(state.message, color = MaterialTheme.colorScheme.error)
-			Spacer(Modifier.height(12.dp))
-			Button(onClick = onRetry) { Text("Retry") }
-		}
+			is PumpSettingsUiState.Error -> Column(
+				modifier = modifier.fillMaxSize().padding(16.dp),
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.Center
+			) {
+				Text(state.message, color = MaterialTheme.colorScheme.error)
+				Spacer(Modifier.height(12.dp))
+				Button(onClick = onRetry) { Text("Retry") }
+			}
 
-		is PumpSettingsUiState.Ready -> PumpSettingsContent(state.data, modifier)
+			is PumpSettingsUiState.Ready -> PumpSettingsContent(
+				data = state.data,
+				modifier = modifier,
+				batteryPercent = batteryPercent,
+				batteryTimestamp = batteryTimestamp,
+				pumpSettingsExportMessage = pumpSettingsExportMessage,
+				onDownloadPumpSettingsJson = onDownloadPumpSettingsJson
+			)
 	}
 }
 
 @Composable
-private fun PumpSettingsContent(data: PumpSettingsData, modifier: Modifier) {
+private fun PumpSettingsDiagnostics(
+	message: String?,
+	onDownload: () -> Unit,
+	modifier: Modifier = Modifier
+) {
+	Card(modifier = modifier.fillMaxWidth()) {
+		Column(
+			modifier = Modifier.fillMaxWidth().padding(12.dp),
+			verticalArrangement = Arrangement.spacedBy(10.dp)
+		) {
+			Text(
+				"Pump settings diagnostics",
+				style = MaterialTheme.typography.titleMedium,
+				fontWeight = FontWeight.SemiBold
+			)
+			Text(
+				"Download pump settings and profiles as JSON to Download/TandemSourceRT.",
+				style = MaterialTheme.typography.bodySmall
+			)
+			OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+				Text("Download settings JSON")
+			}
+			if (!message.isNullOrBlank()) {
+				Text(message, style = MaterialTheme.typography.bodySmall)
+			}
+		}
+	}
+}
+
+@Composable
+private fun PumpSettingsContent(
+	data: PumpSettingsData,
+	modifier: Modifier,
+	batteryPercent: Int?,
+	batteryTimestamp: String?,
+	pumpSettingsExportMessage: String?,
+	onDownloadPumpSettingsJson: () -> Unit
+) {
 	var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 	LaunchedEffect(data.serialNumber, data.profiles.size) { selectedTab = 0 }
 
@@ -94,13 +144,27 @@ private fun PumpSettingsContent(data: PumpSettingsData, modifier: Modifier) {
 			}
 		}
 
-		if (selectedTab == 0) GeneralPumpSettings(data)
+		if (selectedTab == 0) {
+			GeneralPumpSettings(
+				data,
+				batteryPercent,
+				batteryTimestamp,
+				pumpSettingsExportMessage,
+				onDownloadPumpSettingsJson
+			)
+		}
 		else ProfileSettings(data.profiles[selectedTab - 1], data.glucoseUnit)
 	}
 }
 
 @Composable
-private fun GeneralPumpSettings(data: PumpSettingsData) {
+private fun GeneralPumpSettings(
+	data: PumpSettingsData,
+	batteryPercent: Int?,
+	batteryTimestamp: String?,
+	pumpSettingsExportMessage: String?,
+	onDownloadPumpSettingsJson: () -> Unit
+) {
 	LazyColumn(
 		modifier = Modifier.fillMaxSize().padding(12.dp),
 		verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -111,9 +175,6 @@ private fun GeneralPumpSettings(data: PumpSettingsData) {
 					"Data timestamp",
 					formatPumpDataTimestamp(data.lastUploadDate ?: data.settingsTimestamp)
 				)
-				if (data.isFromCache) {
-					Text("Available offline", color = MaterialTheme.colorScheme.primary)
-				}
 			}
 		}
 		item {
@@ -124,6 +185,11 @@ private fun GeneralPumpSettings(data: PumpSettingsData) {
 				data.algorithm?.let { SettingLine("Algorithm", it) }
 				SettingLine("Active profile", data.activeProfileName ?: "Not available")
 				SettingLine("Glucose unit", data.glucoseUnit)
+				SettingLine("Time zone", currentTimeZoneText())
+				SettingLine("Battery", batteryPercent?.let { "$it%" } ?: "Not available")
+				if (batteryTimestamp != null) {
+					SettingLine("Battery timestamp", formatPumpLocalTimestamp(batteryTimestamp))
+				}
 			}
 		}
 
@@ -175,6 +241,13 @@ private fun GeneralPumpSettings(data: PumpSettingsData) {
 				}
 			}
 		}
+
+		item {
+			PumpSettingsDiagnostics(
+				message = pumpSettingsExportMessage,
+				onDownload = onDownloadPumpSettingsJson
+			)
+		}
 	}
 }
 
@@ -185,7 +258,25 @@ private fun formatPumpDataTimestamp(value: String?): String {
 		?: runCatching { OffsetDateTime.parse(value).atZoneSameInstant(zone) }.getOrNull()
 		?: runCatching { LocalDateTime.parse(value).atZone(zone) }.getOrNull()
 		?: return value
-	return dateTime.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm z", Locale.ENGLISH))
+	return dateTime.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH))
+}
+
+private fun formatPumpLocalTimestamp(value: String?): String {
+	if (value.isNullOrBlank()) return "Not available"
+	val parsed = runCatching { LocalDateTime.parse(value.removeSuffix("Z")) }.getOrNull()
+		?: return value
+	return parsed.format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH))
+}
+
+private fun currentTimeZoneText(): String {
+	val now = ZonedDateTime.now()
+	val totalSeconds = now.offset.totalSeconds
+	val sign = if (totalSeconds < 0) "-" else "+"
+	val absoluteMinutes = kotlin.math.abs(totalSeconds) / 60
+	val hours = absoluteMinutes / 60
+	val minutes = absoluteMinutes % 60
+	val offset = if (minutes == 0) "GMT$sign$hours" else "GMT$sign$hours:${minutes.toString().padStart(2, '0')}"
+	return "${now.zone.id} ($offset)"
 }
 
 @Composable

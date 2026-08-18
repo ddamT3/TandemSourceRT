@@ -58,6 +58,7 @@ fun CalendarScreen(
 	vm: HomeViewModel,
 	onApply: (LocalDate) -> Unit,
 	modifier: Modifier = Modifier,
+	availableDateColor: Color = Color(0xFF2E7D32),
 	onExportPumpEventsJson: () -> Unit = {},
 	exportMessage: String? = null
 ) {
@@ -246,8 +247,8 @@ fun CalendarScreen(
 											modifier = Modifier
 												.padding(top = 2.dp)
 												.size(4.dp)
-												.background(
-													color = Color(0xFF66BB6A),
+										.background(
+											color = availableDateColor,
 													shape = RoundedCornerShape(99.dp)
 												)
 										)

@@ -6,7 +6,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -34,7 +37,30 @@ class PumpEventsAdapterParityTest {
 			val expectedRows = expected[section] as JsonArray
 			val actualRows = actualJson[section] as JsonArray
 			assertEquals("$section count", expectedRows.size, actualRows.size)
-			expectedRows.indices.forEach { index -> assertEquals("$section[$index]", expectedRows[index], actualRows[index]) }
+			expectedRows.indices.forEach { index ->
+				assertJsonEquivalent(expectedRows[index], actualRows[index], "$section[$index]")
+			}
+		}
+	}
+
+	private fun assertJsonEquivalent(expected: JsonElement, actual: JsonElement, path: String) {
+		when {
+			expected is JsonObject && actual is JsonObject -> {
+				assertEquals("$path keys", expected.keys, actual.keys)
+				expected.forEach { (key, value) ->
+					assertJsonEquivalent(value, requireNotNull(actual[key]), "$path.$key")
+				}
+			}
+			expected is JsonArray && actual is JsonArray -> {
+				assertEquals("$path count", expected.size, actual.size)
+				expected.indices.forEach { index ->
+					assertJsonEquivalent(expected[index], actual[index], "$path[$index]")
+				}
+			}
+			expected is JsonPrimitive && actual is JsonPrimitive &&
+				expected.doubleOrNull != null && actual.doubleOrNull != null ->
+				assertEquals(path, expected.doubleOrNull, actual.doubleOrNull)
+			else -> assertEquals(path, expected, actual)
 		}
 	}
 

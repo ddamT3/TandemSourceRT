@@ -29,30 +29,16 @@ The deviceState model is reconstructed from multiple event types.
 | 4     | Libre 2   |
 | 5     | Libre 3   |
 
-## Event 313 Layout
+## Event 313
 
-| Offset | Field            |
-| ------ | ---------------- |
-| +0     | UserMode         |
-| +1     | PumpControlState |
-| +3     | SensorType       |
+Event 313 is the primary device-state snapshot. The adapter reads explicit BFF
+properties for pump control state, user mode, and sensor type.
 
-Event 313 is treated as the primary device state snapshot.
+## Event 229
 
-## Event 229 Layout
-
-| Offset | Field                        |
-| ------ | ---------------------------- |
-| +0     | ExerciseChoice               |
-| +1     | RequestedAction              |
-| +2     | PreviousUserMode             |
-| +3     | CurrentUserMode              |
-| +4     | SleepStartedByGUI            |
-| +5     | ExerciseStoppedByTimer       |
-| +8     | EatingSoonStoppedByTimer     |
-| +9     | ExerciseTime (Little Endian) |
-
-Event 229 represents user mode transitions and related metadata.
+Event 229 represents user-mode transitions and related metadata, including
+previous and current mode, requested action, exercise choice and duration, and
+whether a mode was started or stopped by the pump UI or timer.
 
 ## Event 230
 

@@ -52,5 +52,18 @@ It is reconstructed by merging:
 The Tandem Source `pump-logs` JSON response is the authoritative source
 of event values. Pump settings come from the reports pumper JSON response.
 
-No estimation or reconstruction is performed beyond explicit BFF event data.
-Legacy binary blobs were the source of truth only through `v01.01.xxx`.
+No estimation or reconstruction is performed beyond explicit BFF event data,
+except for values explicitly labelled as estimates or configured reminders.
+
+## Runtime Snapshots
+
+Three independent latest-data snapshots are persisted:
+
+- normalized chart `DayDataset`;
+- pump settings and profiles;
+- Sensor Set summary, including sensor type, observed period, last completed
+  set change, configured set-change reminder, remaining insulin, and battery.
+
+The Sensor Set session end is explicitly labelled as an estimate: first CGM
+reading observed after the latest session boundary plus 10 days. It is not a
+sensor-native expiry value.
