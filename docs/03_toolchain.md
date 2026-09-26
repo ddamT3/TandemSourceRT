@@ -1,8 +1,8 @@
 # TandemSourceRT Toolchain and Environment
 
-**Updated:** 2026-08-18
+**Updated:** 2026-09-26
 
-**Documented release:** `v02.01.004`
+**Documented release:** `v02.01.005`
 
 ## Project Rules
 
@@ -43,7 +43,7 @@ Main activity: `com.example.tandemapp.st.MainActivity`
 
 ## Versioning
 
-- Display versions use `vMM.mm.rrr`, for example `v02.01.004`.
+- Display versions use `vMM.mm.rrr`, for example `v02.01.005`.
 - `release_versionName` stores `MM.mm`.
 - `release_versionCode` stores the revision from `000` to `999`.
 - Android `versionCode` is calculated as
@@ -101,7 +101,7 @@ the repository when the local workflow configures them.
 adb kill-server
 adb start-server
 adb devices
-adb install -r ".\app\build\outputs\apk\debug\TandemSourceRT-v02.01.004.apk"
+adb install -r ".\app\build\outputs\apk\debug\TandemSourceRT-v02.01.005.apk"
 ```
 
 For a clean reinstall that intentionally removes all app-private caches and
@@ -109,7 +109,7 @@ preferences:
 
 ```powershell
 adb uninstall com.example.tandemapp.st
-adb install ".\app\build\outputs\apk\debug\TandemSourceRT-v02.01.004.apk"
+adb install ".\app\build\outputs\apk\debug\TandemSourceRT-v02.01.005.apk"
 ```
 
 ## Diagnostics
@@ -160,7 +160,7 @@ exports, credentials, tokens, cookies, reports, or cached medical data.
 Create the source archive from committed files:
 
 ```powershell
-git archive --format=zip --output=".\Temp\TandemSourceRT-v02.01.004-source.zip" HEAD
+git archive --format=zip --output=".\Temp\TandemSourceRT-v02.01.005-source.zip" HEAD
 ```
 
 ## New Workstation Setup

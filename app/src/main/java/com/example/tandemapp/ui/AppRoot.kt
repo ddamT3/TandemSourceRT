@@ -1,5 +1,7 @@
 package com.example.tandemapp.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.util.Log
 
 import androidx.compose.foundation.Canvas
@@ -33,6 +35,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.example.tandemapp.data.EmbeddedTandemRepository
 import com.example.tandemapp.data.ChartDataCacheRepository
+import com.example.tandemapp.data.CalendarReminderRepository
+import com.example.tandemapp.data.CalendarSyncResult
 import com.example.tandemapp.data.LiveHistoryResult
 import com.example.tandemapp.data.PumpSettingsRepository
 import com.example.tandemapp.data.PumpSettingsResult
@@ -46,6 +50,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -61,16 +68,17 @@ import java.time.LocalDate
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoot(vm: HomeViewModel) {
+	val context = LocalContext.current
 	var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Login) }
 	var loginError by remember { mutableStateOf<String?>(null) }
 	var calendarExportMessage by remember { mutableStateOf<String?>(null) }
 	var pumpSettingsExportMessage by remember { mutableStateOf<String?>(null) }
 	var pumpSettingsState by remember { mutableStateOf<PumpSettingsUiState>(PumpSettingsUiState.Idle) }
 	var sensorSetState by remember { mutableStateOf<SensorSetUiState>(SensorSetUiState.Idle) }
+	var calendarReminderMessage by remember { mutableStateOf<String?>(null) }
 	var homeDataStatus by remember { mutableStateOf<PageDataStatus?>(null) }
 	var pumpSettingsRequestSerial by remember { mutableStateOf(0L) }
 
-	val context = LocalContext.current
 	val configuration = LocalConfiguration.current
 	val adaptiveTopBarHeight =
 		(configuration.screenHeightDp * GlucoseChartLayout.HomeUi.topBarHeightRatio).dp
@@ -84,8 +92,38 @@ fun AppRoot(vm: HomeViewModel) {
 		PumpSettingsRepository(context.applicationContext, apiRepo::getAuthenticatedContext)
 	}
 	val sensorSetRepo = remember(context) { SensorSetRepository(context.applicationContext) }
+	val calendarReminderRepo = remember(context) { CalendarReminderRepository(context.applicationContext) }
+	var calendarRemindersEnabled by remember(calendarReminderRepo) {
+		mutableStateOf(calendarReminderRepo.isEnabled())
+	}
 	val chartCacheRepo = remember(context) { ChartDataCacheRepository(context.applicationContext) }
 	val scope = rememberCoroutineScope()
+
+	fun hasCalendarPermissions(): Boolean =
+		ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
+			ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+
+	fun synchronizeCalendar(data: com.example.tandemapp.model.SensorSetData) {
+		if (!calendarReminderRepo.isEnabled() || !hasCalendarPermissions()) return
+		calendarReminderMessage = when (val result = calendarReminderRepo.synchronize(data)) {
+			CalendarSyncResult.Success -> "Calendar reminders synchronized"
+			is CalendarSyncResult.Failure -> result.message
+		}
+	}
+
+	val calendarPermissionLauncher = rememberLauncherForActivityResult(
+		ActivityResultContracts.RequestMultiplePermissions()
+	) { permissions ->
+		val granted = permissions[Manifest.permission.READ_CALENDAR] == true &&
+			permissions[Manifest.permission.WRITE_CALENDAR] == true
+		calendarRemindersEnabled = granted
+		calendarReminderRepo.setEnabled(granted)
+		calendarReminderMessage = if (granted) {
+			"Calendar access granted; reminders will sync after the next data update"
+		} else {
+			"Calendar permission is required"
+		}
+	}
 	val pageDataStatus = when (currentScreen) {
 		AppScreen.Home -> homeDataStatus
 		AppScreen.PumpSettings -> (pumpSettingsState as? PumpSettingsUiState.Ready)?.data?.let {
@@ -152,6 +190,7 @@ fun AppRoot(vm: HomeViewModel) {
 		}
 		if (eventsResult is LiveHistoryResult.Success) {
 			val updated = sensorSetRepo.update(eventsResult.dataset, settingsData)
+			if (updated != null) synchronizeCalendar(updated)
 			sensorSetState = updated?.let { SensorSetUiState.Ready(it) }
 				?: cached?.let { SensorSetUiState.Ready(it) }
 				?: SensorSetUiState.Error("No sensor or infusion set data available")
@@ -186,6 +225,7 @@ fun AppRoot(vm: HomeViewModel) {
 					homeDataStatus = PageDataStatus.Updated
 					sensorSetRepo.update(result.dataset, null)?.let {
 						sensorSetState = SensorSetUiState.Ready(it)
+						synchronizeCalendar(it)
 					}
 					vm.jumpToLatest()
 					currentScreen = AppScreen.Home
@@ -329,6 +369,10 @@ fun AppRoot(vm: HomeViewModel) {
 						val cachedResult = chartCacheRepo.update(result.dataset)
 						vm.setLiveData(cachedResult.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Updated
+						sensorSetRepo.update(result.dataset, null)?.let { updated ->
+							sensorSetState = SensorSetUiState.Ready(updated)
+							synchronizeCalendar(updated)
+						}
 					} else {
 						vm.setLiveData(result.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Historical
@@ -374,6 +418,10 @@ fun AppRoot(vm: HomeViewModel) {
 								val cachedResult = chartCacheRepo.update(result.dataset)
 								vm.setLiveData(cachedResult.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Updated
+								sensorSetRepo.update(result.dataset, null)?.let { updated ->
+									sensorSetState = SensorSetUiState.Ready(updated)
+									synchronizeCalendar(updated)
+								}
 							} else {
 								vm.setLiveData(result.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Historical
@@ -436,6 +484,28 @@ fun AppRoot(vm: HomeViewModel) {
 
 			AppScreen.SensorSet -> SensorSetScreen(
 				state = sensorSetState,
+				calendarRemindersEnabled = calendarRemindersEnabled,
+				calendarMessage = calendarReminderMessage,
+				onCalendarRemindersChanged = { enabled ->
+					if (enabled) {
+						if (hasCalendarPermissions()) {
+							calendarRemindersEnabled = true
+							calendarReminderRepo.setEnabled(true)
+							calendarReminderMessage = "Reminders will sync after the next data update"
+						} else {
+							calendarPermissionLauncher.launch(
+								arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+							)
+						}
+					} else {
+						calendarRemindersEnabled = false
+						calendarReminderRepo.setEnabled(false)
+						calendarReminderMessage = when (val result = calendarReminderRepo.deleteManagedEvents()) {
+							CalendarSyncResult.Success -> "Calendar reminders removed"
+							is CalendarSyncResult.Failure -> result.message
+						}
+					}
+				},
 				modifier = Modifier.padding(innerPadding)
 			)
 
@@ -507,6 +577,10 @@ fun AppRoot(vm: HomeViewModel) {
 								val cachedResult = chartCacheRepo.update(result.dataset)
 								vm.setLiveData(cachedResult.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Updated
+								sensorSetRepo.update(result.dataset, null)?.let { updated ->
+									sensorSetState = SensorSetUiState.Ready(updated)
+									synchronizeCalendar(updated)
+								}
 							} else {
 								vm.setLiveData(result.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Historical

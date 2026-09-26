@@ -26,3 +26,11 @@ to the right:
 
 Calendar availability dots use the same color as the active chart dataset.
 Pump and Sensor Set retain their source timestamp inside the Data source card.
+
+## Sensor Set Calendar Control
+
+The Sensor Set page includes a `Sync with Android calendar` switch. Status
+text reports permission requirements, pending synchronization, successful
+synchronization, or removal of managed events. Enabling the switch is
+persistent but creates or refreshes events only after the next successful
+current-data update. Disabling it removes events created by TandemSourceRT.

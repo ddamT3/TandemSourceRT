@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,7 +27,13 @@ import java.util.Locale
 
 /** Displays the latest cached sensor and infusion-set snapshot. */
 @Composable
-fun SensorSetScreen(state: SensorSetUiState, modifier: Modifier = Modifier) {
+fun SensorSetScreen(
+	state: SensorSetUiState,
+	calendarRemindersEnabled: Boolean,
+	calendarMessage: String?,
+	onCalendarRemindersChanged: (Boolean) -> Unit,
+	modifier: Modifier = Modifier
+) {
 	when (state) {
 		SensorSetUiState.Idle,
 		SensorSetUiState.Loading -> Column(
@@ -46,12 +53,24 @@ fun SensorSetScreen(state: SensorSetUiState, modifier: Modifier = Modifier) {
 			Text(state.message, color = MaterialTheme.colorScheme.error)
 		}
 
-		is SensorSetUiState.Ready -> SensorSetContent(state.data, modifier)
+		is SensorSetUiState.Ready -> SensorSetContent(
+			data = state.data,
+			calendarRemindersEnabled = calendarRemindersEnabled,
+			calendarMessage = calendarMessage,
+			onCalendarRemindersChanged = onCalendarRemindersChanged,
+			modifier = modifier
+		)
 	}
 }
 
 @Composable
-private fun SensorSetContent(data: SensorSetData, modifier: Modifier) {
+private fun SensorSetContent(
+	data: SensorSetData,
+	calendarRemindersEnabled: Boolean,
+	calendarMessage: String?,
+	onCalendarRemindersChanged: (Boolean) -> Unit,
+	modifier: Modifier
+) {
 	LazyColumn(
 		modifier = modifier.fillMaxSize().padding(12.dp),
 		verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -93,6 +112,25 @@ private fun SensorSetContent(data: SensorSetData, modifier: Modifier) {
 						formatPumpLocalTime(data.remainingInsulinTimestamp)
 					)
 				}
+			}
+		}
+		item {
+			SensorSetCard("Calendar reminders") {
+				androidx.compose.foundation.layout.Row(
+					modifier = Modifier.fillMaxWidth(),
+					horizontalArrangement = Arrangement.SpaceBetween,
+					verticalAlignment = Alignment.CenterVertically
+				) {
+					Text("Sync with Android calendar", modifier = Modifier.weight(1f))
+					Switch(
+						checked = calendarRemindersEnabled,
+						onCheckedChange = onCalendarRemindersChanged
+					)
+				}
+				Text(
+					calendarMessage ?: "Adds alerts 2 hours before and at the due time.",
+					style = MaterialTheme.typography.bodySmall
+				)
 			}
 		}
 	}

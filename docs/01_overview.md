@@ -10,6 +10,7 @@ TandemSourceRT is an Android application that authenticates with Tandem Source, 
 - Current-pump selection and historical browsing
 - BFF JSON as source of truth
 - Offline access to the latest current dataset and device settings
+- Optional Android Calendar reminders for sensor expiry and infusion-set change
 
 ## High-Level Pipeline
 
@@ -24,6 +25,10 @@ Pump Events / Pump Settings JSON
 Kotlin Repository and Adapters
     ↓
 Normalized Dataset / Latest-Data Caches / UI
+
+Current Sensor Set data can also be synchronized to a writable Android
+calendar. The Calendar Provider owns reminder delivery after synchronization,
+so TandemSourceRT does not need to remain running.
 
 The app stores the latest current chart dataset, pump settings, and Sensor Set
 snapshot in Android private storage. Historical

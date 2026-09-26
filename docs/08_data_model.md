@@ -67,3 +67,15 @@ Three independent latest-data snapshots are persisted:
 The Sensor Set session end is explicitly labelled as an estimate: first CGM
 reading observed after the latest session boundary plus 10 days. It is not a
 sensor-native expiry value.
+
+The estimated value stored in `SensorSetData` is not normalized or rounded.
+Only the Android Calendar event time is adjusted when the estimate falls
+outside the inclusive 10:00–20:00 local-time window:
+
+- before 10:00: 20:00 on the previous day;
+- from 10:00 through 20:00: the original estimated time;
+- after 20:00: 20:00 on the same day.
+
+The calendar event title retains the original estimated date and time so the
+notification distinguishes the estimate from its possibly earlier reminder
+event time. Infusion-set due times are not normalized.
