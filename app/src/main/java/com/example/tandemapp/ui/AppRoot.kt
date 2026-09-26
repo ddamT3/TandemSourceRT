@@ -284,9 +284,7 @@ fun AppRoot(vm: HomeViewModel) {
 			}
 		},
 		bottomBar = {
-			NavigationBar(
-				modifier = Modifier.height(56.dp)
-			) {
+			NavigationBar {
 				NavigationBarItem(
 					selected = currentScreen == AppScreen.Home,
 					onClick = { currentScreen = AppScreen.Home },

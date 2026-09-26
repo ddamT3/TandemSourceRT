@@ -34,3 +34,11 @@ text reports permission requirements, pending synchronization, successful
 synchronization, or removal of managed events. Enabling the switch is
 persistent but creates or refreshes events only after the next successful
 current-data update. Disabling it removes events created by TandemSourceRT.
+
+## Bottom Navigation
+
+Dashboard, Calendar, Pump, Sensor Set, and Login are presented in a Material 3
+`NavigationBar`. The bar does not impose a fixed total height, allowing the
+component to account for Android system navigation insets on both gesture and
+three-button navigation configurations. The final implementation does not
+enable edge-to-edge mode explicitly.

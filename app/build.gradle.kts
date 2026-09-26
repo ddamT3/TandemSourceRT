@@ -9,7 +9,7 @@ plugins {
 // Versione release letta da buildAPK.bat. I nomi delle due variabili sono
 // intenzionalmente compatibili con le espressioni regolari dello script.
 val release_versionName = "02.01"
-val release_versionCode = 5
+val release_versionCode = 7
 
 val releaseVersionParts = release_versionName.split(".")
 require(releaseVersionParts.size == 2) { "versionName deve usare il formato MM.mm" }
