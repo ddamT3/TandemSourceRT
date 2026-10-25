@@ -4,9 +4,11 @@ import com.example.tandemapp.model.BasalPoint
 import com.example.tandemapp.model.BolusEvent
 import com.example.tandemapp.model.CarbEvent
 import com.example.tandemapp.model.CgmPoint
+import com.example.tandemapp.model.CgmSourceMetadata
 import com.example.tandemapp.model.DayDataset
 import com.example.tandemapp.model.DeviceStateEvent
 import com.example.tandemapp.model.IobPoint
+import com.example.tandemapp.model.PumpEventsSource
 import com.example.tandemapp.model.SupplementalPumpEvent
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -18,11 +20,17 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 
 @Serializable
-data class PumpEventsPayloadDto(val events: List<PumpEventDto> = emptyList())
+data class PumpEventsPayloadDto(
+	val events: List<PumpEventDto> = emptyList(),
+	val clockChanges: JsonElement? = null
+)
 
 @Serializable
 data class PumpEventDto(
@@ -30,8 +38,8 @@ data class PumpEventDto(
 	val estimatedDateTime: String? = null,
 	val deviceAssignmentId: String? = null,
 	val eventCode: Int? = null,
-	val sequenceGroup: Int = 0,
-	val sequenceNumber: Int = 0,
+	val sequenceGroup: Int? = null,
+	val sequenceNumber: Int? = null,
 	val eventProperties: JsonObject = JsonObject(emptyMap())
 )
 
@@ -42,15 +50,26 @@ object PumpEventsAdapter {
 	private val specializedCodes = setOf(3, 11, 12, 20, 21, 33, 55, 64, 65, 66, 81, 229, 230, 279, 313, 399, 447)
 	private val excludedCodes = setOf(219, 307)
 
-	fun decode(payload: String): DayDataset = decode(json.decodeFromString<PumpEventsPayloadDto>(payload))
+	fun decode(payload: String, requestedAssignmentId: String? = null): DayDataset {
+		val rawPayload = json.parseToJsonElement(payload).jsonObject
+		return decode(json.decodeFromJsonElement<PumpEventsPayloadDto>(rawPayload), requestedAssignmentId, rawPayload)
+	}
 
-	fun decode(payload: PumpEventsPayloadDto): DayDataset {
-		val events = payload.events.sortedWith(compareBy({ time(it).orEmpty() }, { it.sequenceGroup }, { it.sequenceNumber }))
+	fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String? = null): DayDataset =
+		decode(payload, requestedAssignmentId, json.encodeToJsonElement(payload).jsonObject)
+
+	private fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String?, rawPayload: JsonObject): DayDataset {
+		// Keep the existing display ordering while retaining each original response position.
+		val indexedEvents = payload.events.withIndex().sortedWith(
+			compareBy({ time(it.value).orEmpty() }, { it.value.sequenceGroup ?: 0 }, { it.value.sequenceNumber ?: 0 })
+		)
+		val events = indexedEvents.map { it.value }
 		val (bolus, carbs) = extractBolus(events)
 		return DayDataset(
-			cgm = extractCgm(events), bolus = bolus, carbs = carbs,
+			cgm = extractCgm(indexedEvents), bolus = bolus, carbs = carbs,
 			iob = extractIob(events), basal = extractBasal(events),
-			deviceStates = extractDeviceStates(events), supplementalEvents = extractSupplemental(events)
+			deviceStates = extractDeviceStates(events), supplementalEvents = extractSupplemental(events),
+			pumpEventsSources = listOf(PumpEventsSource(requestedAssignmentId, rawPayload))
 		)
 	}
 
@@ -68,7 +87,7 @@ object PumpEventsAdapter {
 	}
 	private fun JsonObject.present(name: String) = this[name] != null && this[name] !is JsonNull
 
-	private fun extractCgm(events: List<PumpEventDto>) = events.mapNotNull { event ->
+	private fun extractCgm(events: List<IndexedValue<PumpEventDto>>) = events.mapNotNull { (index, event) ->
 		if (event.eventCode != 399) return@mapNotNull null
 		val p = event.eventProperties
 		val seconds = p.integer("egvTimeStamp")
@@ -76,7 +95,15 @@ object PumpEventsAdapter {
 		val value = (p["currentGlucoseDisplayValue"] as? JsonPrimitive)?.intOrNull
 		val dataType = p["cgmDataType"]
 		val recovered = if (dataType is JsonArray) dataType.any { (it as? JsonPrimitive)?.intOrNull == 1 } else (dataType as? JsonPrimitive)?.intOrNull == 1
-		if (pointTime == null || value == null) null else CgmPoint(pointTime, value, recovered)
+		if (pointTime == null || value == null) null else CgmPoint(
+			pointTime, value, recovered,
+			CgmSourceMetadata(
+				payloadIndex = 0, eventIndex = index,
+				sequenceNumber = event.sequenceNumber, sequenceGroup = event.sequenceGroup,
+				pumpDateTime = event.pumpDateTime, estimatedDateTime = event.estimatedDateTime,
+				egvTimeStamp = p["egvTimeStamp"]?.takeUnless { it is JsonNull }, deviceAssignmentId = event.deviceAssignmentId
+			)
+		)
 	}.sortedBy { it.time }
 
 	private fun extractIob(events: List<PumpEventDto>) = events.mapNotNull { event ->
@@ -185,6 +212,6 @@ object PumpEventsAdapter {
 
 	private fun extractSupplemental(events: List<PumpEventDto>) = events.mapNotNull { event ->
 		val code = event.eventCode ?: return@mapNotNull null
-		if (code in specializedCodes || code in excludedCodes) null else SupplementalPumpEvent(time(event), event.estimatedDateTime, event.deviceAssignmentId, code, event.sequenceGroup, event.sequenceNumber, event.eventProperties)
+		if (code in specializedCodes || code in excludedCodes) null else SupplementalPumpEvent(time(event), event.estimatedDateTime, event.deviceAssignmentId, code, event.sequenceGroup ?: 0, event.sequenceNumber ?: 0, event.eventProperties)
 	}
 }

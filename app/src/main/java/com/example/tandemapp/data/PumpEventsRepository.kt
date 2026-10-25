@@ -33,7 +33,7 @@ class PumpEventsRepository {
 	fun load(auth: TandemAuthContext, selectedDate: LocalDate?): DayDataset {
 		val assignments = getAssignments(auth)
 		if (assignments.isEmpty()) throw IllegalStateException("Nessun assignmentId disponibile")
-		return merge(assignments.map { PumpEventsAdapter.decode(downloadEvents(auth, it.id, selectedDate)) })
+		return merge(assignments.map { PumpEventsAdapter.decode(downloadEvents(auth, it.id, selectedDate), requestedAssignmentId = it.id) })
 	}
 
 	fun exportRaw(auth: TandemAuthContext, selectedDate: LocalDate?, exportDir: File): PumpEventsExportResult {
@@ -154,16 +154,29 @@ class PumpEventsRepository {
 		}
 	}
 
-	private fun merge(datasets: List<DayDataset>) = DayDataset(
-		cgm = datasets.flatMap { it.cgm }.distinct().sortedBy { it.time },
-		bolus = datasets.flatMap { it.bolus }.distinct().sortedBy { it.time },
-		carbs = datasets.flatMap { it.carbs }.distinct().sortedBy { it.time },
-		iob = datasets.flatMap { it.iob }.distinct().sortedBy { it.time },
-		basal = datasets.flatMap { it.basal }.distinct().sortedBy { it.time },
-		deviceStates = datasets.flatMap { it.deviceStates }.distinct().sortedBy { it.time },
-		supplementalEvents = datasets.flatMap { it.supplementalEvents }.distinct()
-			.sortedWith(compareBy({ it.time.orEmpty() }, { it.sequenceGroup }, { it.sequenceNumber }))
-	)
+	internal fun merge(datasets: List<DayDataset>): DayDataset {
+		var sourceOffset = 0
+		val cgm = datasets.flatMap { dataset ->
+			val points = dataset.cgm.map { point ->
+				point.source?.let { source ->
+					point.copy(source = source.copy(payloadIndex = source.payloadIndex + sourceOffset))
+				} ?: point
+			}
+			sourceOffset += dataset.pumpEventsSources.size
+			points
+		}
+		return DayDataset(
+			cgm = cgm.sortedBy { it.time },
+			bolus = datasets.flatMap { it.bolus }.distinct().sortedBy { it.time },
+			carbs = datasets.flatMap { it.carbs }.distinct().sortedBy { it.time },
+			iob = datasets.flatMap { it.iob }.distinct().sortedBy { it.time },
+			basal = datasets.flatMap { it.basal }.distinct().sortedBy { it.time },
+			deviceStates = datasets.flatMap { it.deviceStates }.distinct().sortedBy { it.time },
+			supplementalEvents = datasets.flatMap { it.supplementalEvents }.distinct()
+				.sortedWith(compareBy({ it.time.orEmpty() }, { it.sequenceGroup }, { it.sequenceNumber })),
+			pumpEventsSources = datasets.flatMap { it.pumpEventsSources }
+		)
+	}
 
 	private fun encode(value: String): String =
 		URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")

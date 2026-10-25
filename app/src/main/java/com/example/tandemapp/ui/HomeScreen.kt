@@ -36,8 +36,9 @@ import androidx.compose.material.icons.filled.Refresh
 import com.example.tandemapp.model.BasalPoint
 import com.example.tandemapp.model.BolusEvent
 import androidx.compose.ui.platform.LocalConfiguration
-import com.example.tandemapp.model.CgmPoint
+import com.example.tandemapp.data.CgmTimeline
 import com.example.tandemapp.model.DayDataset
+import com.example.tandemapp.model.DeviceStateEvent
 import com.example.tandemapp.model.IobPoint
 import com.example.tandemapp.viewmodel.UserModeSegment
 import com.example.tandemapp.viewmodel.HomeViewModel
@@ -79,6 +80,8 @@ fun HomeScreen(
 	) {
 		val snapshot = rememberCursorSnapshot(
 			dataset = dataset,
+			cgmTimeline = state.cgmTimeline,
+			dashboardEvents = state.dashboardEvents,
 			visibleWindowStart = state.visibleWindowStart,
 			visibleWindowEnd = state.visibleWindowEnd
 		)
@@ -113,13 +116,13 @@ fun HomeScreen(
 							)
 					) {
 						GlucoseChart(
-							points = dataset?.cgm ?: emptyList(),
+							points = state.cgmTimeline.points,
 							bolusEvents = dataset?.bolus ?: emptyList(),
 							carbEvents = dataset?.carbs ?: emptyList(),
 							basalPoints = dataset?.basal ?: emptyList(),
 							iobPoints = dataset?.iob ?: emptyList(),
 							userModeSegments = state.userModeSegments,
-							deviceStateEvents = dataset?.deviceStates ?: emptyList(),
+							deviceStateEvents = state.dashboardEvents,
 							windowHours = state.selectedWindowHours,
 							fixedWindowStart = state.visibleWindowStart,
 							fixedWindowEnd = state.visibleWindowEnd,
@@ -345,6 +348,8 @@ private data class CursorSnapshot(
 @Composable
 private fun rememberCursorSnapshot(
 	dataset: DayDataset?,
+	cgmTimeline: CgmTimeline,
+	dashboardEvents: List<DeviceStateEvent>,
 	visibleWindowStart: OffsetDateTime?,
 	visibleWindowEnd: OffsetDateTime?
 ): CursorSnapshot? {
@@ -371,11 +376,11 @@ private fun rememberCursorSnapshot(
 	}
 
 	val iobValue = interpolateIob(dataset.iob, centerTime)
-	val cgmValue = interpolateCgm(dataset.cgm, centerTime)
+	val cgmValue = cgmTimeline.valueAt(centerTime.toInstant())
 	val basalValue = currentBasal(dataset.basal, centerTime)
 	val bolusAtCursor = findBolusAtCursor(dataset.bolus, centerTime)
 	val choAtCursor = findChoAtCursor(dataset, centerTime)
-	val eventAtCursor = findEventAtCursor(dataset.deviceStates, centerTime)
+	val eventAtCursor = findEventAtCursor(dashboardEvents, centerTime)
 
 	return CursorSnapshot(
 		day = centerTime.format(dayFormatter),
@@ -400,14 +405,6 @@ private fun rememberCursorSnapshot(
 private fun interpolateIob(points: List<IobPoint>, targetTime: OffsetDateTime): Double? {
 	val parsed = points.mapNotNull { point ->
 		parseChartTime(point.time)?.let { ParsedNumericPoint(it, point.iob) }
-	}.sortedBy { it.time.toInstant() }
-
-	return interpolateNumericSeries(parsed, targetTime, maxGapSeconds = 15 * 60L)
-}
-
-private fun interpolateCgm(points: List<CgmPoint>, targetTime: OffsetDateTime): Double? {
-	val parsed = points.mapNotNull { point ->
-		parseChartTime(point.time)?.let { ParsedNumericPoint(it, point.value.toDouble()) }
 	}.sortedBy { it.time.toInstant() }
 
 	return interpolateNumericSeries(parsed, targetTime, maxGapSeconds = 15 * 60L)

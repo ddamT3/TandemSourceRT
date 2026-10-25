@@ -3,6 +3,9 @@ package com.example.tandemapp.viewmodel
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.example.tandemapp.model.DayDataset
+import com.example.tandemapp.model.DeviceStateEvent
+import com.example.tandemapp.data.CgmTimeline
+import com.example.tandemapp.data.CgmTimelineResolver
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -14,6 +17,8 @@ data class HomeState(
 	val anchorDate: LocalDate = LocalDate.parse("2026-03-16"),
 	val available: List<LocalDate> = emptyList(),
 	val dataset: DayDataset? = null,
+	val cgmTimeline: CgmTimeline = CgmTimeline(),
+	val dashboardEvents: List<DeviceStateEvent> = emptyList(),
 	val userModeSegments: List<UserModeSegment> = emptyList(),
 	val selectedWindowHours: Int = 24,
 	val visibleWindowStart: OffsetDateTime? = null,
@@ -69,7 +74,8 @@ class HomeViewModel : ViewModel() {
 	}
 
 	fun setLiveData(data: DayDataset, anchorDate: LocalDate = LocalDate.now()) {
-		val available = data.cgm
+		val cgmTimeline = CgmTimelineResolver.resolve(data)
+		val available = cgmTimeline.points.map { it.point }
 			.mapNotNull { runCatching { LocalDate.parse(it.time.substring(0, 10)) }.getOrNull() }
 			.distinct()
 			.sorted()
@@ -85,6 +91,8 @@ class HomeViewModel : ViewModel() {
 			anchorDate = anchorDate,
 			available = available,
 			dataset = data,
+			cgmTimeline = cgmTimeline,
+			dashboardEvents = cgmTimeline.dashboardEvents(data.deviceStates),
 			userModeSegments = buildUserModeTimeline(data),
 			visibleWindowStart = center.minusSeconds(halfWindowSeconds),
 			visibleWindowEnd = center.plusSeconds(halfWindowSeconds)
@@ -143,8 +151,7 @@ class HomeViewModel : ViewModel() {
 	}
 
 	fun jumpToLatest() {
-		val dataset = state.value.dataset ?: return
-		val lastCgm = dataset.cgm.lastOrNull() ?: return
+		val lastCgm = state.value.cgmTimeline.points.lastOrNull()?.point ?: return
 		val lastTime = parseChartTime(lastCgm.time) ?: return
 		centerOn(lastTime)
 	}
@@ -207,7 +214,7 @@ class HomeViewModel : ViewModel() {
 					)
 
 					SnapshotField.CGM -> navigateDistinct(
-						pairs = dataset.cgm.mapNotNull { point ->
+						pairs = state.value.cgmTimeline.points.map { it.point }.mapNotNull { point ->
 							parseChartTime(point.time)?.let { it to point.value }
 						},
 						currentTime = centerTime,
@@ -223,7 +230,7 @@ class HomeViewModel : ViewModel() {
 					)
 
 					SnapshotField.EVENT -> navigateDistinct(
-						pairs = dataset.deviceStates.mapNotNull { event ->
+						pairs = state.value.dashboardEvents.mapNotNull { event ->
 							parseChartTime(event.time)?.let { time ->
 								mapEventValue(event.eventType, event.eventSubtype, event.CurrentUserMode, event.PumpControlState)?.let { value ->
 									time to value
@@ -300,12 +307,12 @@ class HomeViewModel : ViewModel() {
 
 	private fun buildTimelinePairs(dataset: DayDataset): List<Pair<OffsetDateTime, Unit>> {
 		return buildList {
-			addAll(dataset.cgm.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
+			addAll(state.value.cgmTimeline.points.mapNotNull { parseChartTime(it.point.time)?.let { time -> time to Unit } })
 			addAll(dataset.iob.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
 			addAll(dataset.basal.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
 			addAll(dataset.bolus.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
 			addAll(dataset.carbs.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
-			addAll(dataset.deviceStates.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
+			addAll(state.value.dashboardEvents.mapNotNull { parseChartTime(it.time)?.let { time -> time to Unit } })
 		}
 			.distinctBy { it.first.toInstant() }
 			.sortedBy { it.first.toInstant() }
@@ -388,6 +395,7 @@ class HomeViewModel : ViewModel() {
 				pumpControlState.equals("Pining", true) ||
 				pumpControlState.equals("Closed Loop", true) ||
 				pumpControlState.equals("Close Loop", true) -> null
+			eventType == CgmTimeline.TIME_EVENT_TYPE -> eventSubtype ?: "TIME"
 			eventType.equals("pump_suspended", true) -> "Stop"
 			eventType.equals("pump_resumed", true) -> "Restart"
 			eventType.equals("cartridge_site_change", true) -> "Change set"

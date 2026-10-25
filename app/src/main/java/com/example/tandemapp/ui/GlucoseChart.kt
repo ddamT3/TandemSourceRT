@@ -3,9 +3,17 @@ package com.example.tandemapp.ui
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -16,10 +24,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.example.tandemapp.model.BasalPoint
 import com.example.tandemapp.model.BolusEvent
 import com.example.tandemapp.model.CarbEvent
-import com.example.tandemapp.model.CgmPoint
+import com.example.tandemapp.data.CgmDisplayPoint
+import com.example.tandemapp.data.CgmTimeline
 import com.example.tandemapp.model.DeviceStateEvent
 import com.example.tandemapp.model.IobPoint
 import com.example.tandemapp.viewmodel.UserModeSegment
@@ -33,7 +43,7 @@ import kotlin.math.abs
 
 @Composable
 fun GlucoseChart(
-	points: List<CgmPoint>,
+	points: List<CgmDisplayPoint>,
 	bolusEvents: List<BolusEvent>,
 	carbEvents: List<CarbEvent>,
 	basalPoints: List<BasalPoint> = emptyList(),
@@ -46,9 +56,10 @@ fun GlucoseChart(
 	canvasHeight: Dp = GlucoseChartLayout.canvasHeight,
 	onPanBySeconds: ((Long) -> Unit)? = null
 ) {
+	var selectedTimeEvent by remember { mutableStateOf<DeviceStateEvent?>(null) }
 	val parsedPoints = points.mapNotNull {
-		val t = parseChartTime(it.time) ?: return@mapNotNull null
-		ParsedCgmPoint(t, it.value.toFloat(), it.is_recovered)
+		val t = parseChartTime(it.point.time) ?: return@mapNotNull null
+		ParsedCgmPoint(t, it.point.value.toFloat(), it.point.is_recovered, it)
 	}.sortedBy { it.time.toInstant() }
 
 	val parsedBolus = bolusEvents.mapNotNull {
@@ -93,7 +104,7 @@ fun GlucoseChart(
 	val parsedDeviceEvents = deviceStateEvents.mapNotNull {
 		val t = parseChartTime(it.time) ?: return@mapNotNull null
 		val type = it.eventType ?: return@mapNotNull null
-		ParsedDeviceEvent(t, type, it.eventLabel ?: shortEventLabel(type), it.sourceEventId)
+		ParsedDeviceEvent(t, type, it.eventLabel ?: shortEventLabel(type), it.sourceEventId, it)
 	}.sortedBy { it.time.toInstant() }
 
 
@@ -125,7 +136,6 @@ fun GlucoseChart(
 	val visibleCarbs = parsedCarbs.filter { inVisibleRange(it.time) }
 	val visibleBasal = parsedBasal.filter { inVisibleRange(it.time) }
 	val visibleIob = parsedIob.filter { inVisibleRange(it.time) }
-	val maxCgmGapSeconds = 15 * 60L
 	val maxIobGapSeconds = 15 * 60L
 	val maxBasalHoldSeconds = 30 * 60L
 	val visibleDeviceEvents = parsedDeviceEvents.filter { inVisibleRange(it.time) }
@@ -154,6 +164,17 @@ fun GlucoseChart(
 		else -> Color(0xFFFF9800)
 	}
 
+	selectedTimeEvent?.let { event ->
+		AlertDialog(
+			onDismissRequest = { selectedTimeEvent = null },
+			title = { Text("TIME") },
+			text = { Text(event.eventSubtype.orEmpty()) },
+			confirmButton = {
+				TextButton(onClick = { selectedTimeEvent = null }) { Text("Close") }
+			}
+		)
+	}
+
 	Canvas(
 		modifier = Modifier
 			.fillMaxWidth()
@@ -164,6 +185,23 @@ fun GlucoseChart(
 					val secondsPerPixel = visibleSeconds / widthPx
 					val deltaSeconds = (-dragAmount * secondsPerPixel).toLong()
 					onPanBySeconds?.invoke(deltaSeconds)
+				}
+			}
+			.pointerInput(visibleDeviceEvents, visibleStart, visibleEnd) {
+				detectTapGestures { tap ->
+					val yScale = size.height.toFloat() / GlucoseChartLayout.Chart.axisLabelY
+					val markerScale = yScale.coerceIn(0.9f, 1.25f)
+					val cy = GlucoseChartLayout.statusLineY * yScale -
+						GlucoseChartLayout.EventMarkers.outsideOffsetAboveLine * markerScale
+					val left = GlucoseChartLayout.chartLeft
+					val right = size.width - GlucoseChartLayout.chartRightPadding
+					val radius = maxOf(24.dp.toPx(), GlucoseChartLayout.EventMarkers.radius * markerScale)
+					val hit = visibleDeviceEvents.filter { it.eventType == CgmTimeline.TIME_EVENT_TYPE }
+						.map { event ->
+							val fraction = Duration.between(visibleStart, event.time).seconds.toFloat() / visibleSeconds
+							event to (tap - Offset((left + fraction * (right - left)).coerceIn(left, right), cy)).getDistance()
+						}.filter { it.second <= radius }.minByOrNull { it.second }?.first
+					if (hit != null) selectedTimeEvent = hit.original
 				}
 			}
 	) {
@@ -185,7 +223,7 @@ fun GlucoseChart(
 
 		val iobTop = GlucoseChartLayout.iobTop * yScale
 		val iobBottom = GlucoseChartLayout.iobBottom * yScale
-		val iobScaleMax = 10f
+		val iobScaleMax = 14f
 
 		val cgmTop = GlucoseChartLayout.cgmTop * yScale
 		val cgmBottom = GlucoseChartLayout.cgmBottom * yScale
@@ -482,7 +520,7 @@ fun GlucoseChart(
 			val y1 = cgmY(p1.value)
 			val color = cgmColor(p1.value)
 
-			if (Duration.between(p1.time, p2.time).seconds <= maxCgmGapSeconds) {
+			if (CgmTimeline.canConnect(p1.sample, p2.sample)) {
 				val x2 = xFor(p2.time)
 				val y2 = cgmY(p2.value)
 				drawLine(color, Offset(x1, y1), Offset(x2, y2), 2.2f)
@@ -624,6 +662,21 @@ fun GlucoseChart(
 			)
 
 			when (event.eventType) {
+				CgmTimeline.TIME_EVENT_TYPE -> {
+					// Reuse the existing event marker envelope and lane position.
+					val faceRadius = r * 0.5f
+					drawCircle(fill, faceRadius, Offset(cx, cy), style = Stroke(width = 1.5f * mScale))
+					drawLine(fill, Offset(cx, cy), Offset(cx, cy - faceRadius * 0.65f), 1.5f * mScale)
+					drawLine(fill, Offset(cx, cy), Offset(cx + faceRadius * 0.55f, cy), 1.5f * mScale)
+					val timePaint = Paint().apply {
+						color = fill.toArgbInt()
+						textAlign = Paint.Align.CENTER
+						textSize = GlucoseChartLayout.fontEvent * 0.65f * mScale
+						isAntiAlias = true
+						isFakeBoldText = true
+					}
+					drawContext.canvas.nativeCanvas.drawText("TIME", cx, cy - r - 4f * mScale, timePaint)
+				}
 				"pump_suspended" -> {
 					val halfSize = GlucoseChartLayout.EventMarkers.stopSquareHalfSize * mScale
 					drawRect(
@@ -678,10 +731,12 @@ fun GlucoseChart(
 		drawLine(Color(0x14000000), Offset(chartLeft, iobY(4f)), Offset(chartRight, iobY(4f)), 1f)
 		drawLine(Color(0x14000000), Offset(chartLeft, iobY(6f)), Offset(chartRight, iobY(6f)), 1f)
 		drawLine(Color(0x14000000), Offset(chartLeft, iobY(8f)), Offset(chartRight, iobY(8f)), 1f)
+		drawLine(Color(0x14000000), Offset(chartLeft, iobY(10f)), Offset(chartRight, iobY(10f)), 1f)
+		drawLine(Color(0x14000000), Offset(chartLeft, iobY(12f)), Offset(chartRight, iobY(12f)), 1f)
 		drawLine(Color(0xFF8D6E63), Offset(chartLeft, iobBottom), Offset(chartRight, iobBottom), 1.4f)
 
 		val iobScaleX = chartRight + 10f
-		listOf(10f, 8f, 6f, 4f, 2f, 0f).forEach { value ->
+		listOf(14f, 12f, 10f, 8f, 6f, 4f, 2f, 0f).forEach { value ->
 			val y = iobY(value)
 			drawLine(Color(0x33000000), Offset(chartRight, y), Offset(chartRight + 6f, y), 1f)
 			drawContext.canvas.nativeCanvas.drawText(
@@ -973,7 +1028,8 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDiamond(
 private data class ParsedCgmPoint(
 	val time: OffsetDateTime,
 	val value: Float,
-	val isRecovered: Boolean
+	val isRecovered: Boolean,
+	val sample: CgmDisplayPoint
 )
 
 private data class ParsedBolusEvent(
@@ -995,7 +1051,8 @@ private data class ParsedDeviceEvent(
 	val time: OffsetDateTime,
 	val eventType: String,
 	val label: String,
-	val sourceEventId: Int?
+	val sourceEventId: Int?,
+	val original: DeviceStateEvent
 )
 
 
@@ -1006,6 +1063,7 @@ private fun deviceEventColor(eventType: String): Color {
 		"cartridge_site_change" -> Color(0xFFFB8C00)
 		"sensor_session_ended" -> Color(0xFF8E24AA)
 		"profile_changed" -> Color(0xFF00897B)
+		CgmTimeline.TIME_EVENT_TYPE -> Color(0xFF455A64)
 		else -> Color(0xFF757575)
 	}
 }
@@ -1017,6 +1075,7 @@ private fun shortEventLabel(eventType: String): String {
 		"cartridge_site_change" -> "Change set"
 		"sensor_session_ended" -> "End Sensor"
 		"profile_changed" -> "Change profile"
+		CgmTimeline.TIME_EVENT_TYPE -> "TIME"
 		else -> eventType
 	}
 }

@@ -38,7 +38,10 @@ class PumpEventsAdapterParityTest {
 			val actualRows = actualJson[section] as JsonArray
 			assertEquals("$section count", expectedRows.size, actualRows.size)
 			expectedRows.indices.forEach { index ->
-				assertJsonEquivalent(expectedRows[index], actualRows[index], "$section[$index]")
+				val actualRow = if (section == "cgm") {
+					JsonObject((actualRows[index] as JsonObject).filterKeys { it != "source" })
+				} else actualRows[index]
+				assertJsonEquivalent(expectedRows[index], actualRow, "$section[$index]")
 			}
 		}
 	}

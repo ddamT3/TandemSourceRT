@@ -1,14 +1,41 @@
 package com.example.tandemapp.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class CgmPoint(
 	val time: String,
 	val value: Int,
-	val is_recovered: Boolean = false
+	val is_recovered: Boolean = false,
+	val source: CgmSourceMetadata? = null
 )
+
+/** Original CGM timing, kept independently of the display-time ordering. */
+@Serializable
+data class CgmSourceMetadata(
+	// Index in DayDataset.pumpEventsSources, rebased when assignments are merged.
+	val payloadIndex: Int,
+	// Position in the original response, NOT an inferred acquisition or reception order.
+	val eventIndex: Int,
+	val sequenceNumber: Int? = null,
+	val sequenceGroup: Int? = null,
+	val pumpDateTime: String? = null,
+	val estimatedDateTime: String? = null,
+	val egvTimeStamp: JsonElement? = null,
+	val deviceAssignmentId: String? = null
+)
+
+/** One BFF response, without assumptions about clockChanges or unknown event fields. */
+@Serializable
+data class PumpEventsSource(
+	val requestedAssignmentId: String? = null,
+	val rawPayload: JsonObject = JsonObject(emptyMap())
+) {
+	// Read directly from the original JSON, retaining absent versus explicit null.
+	val clockChanges: JsonElement? get() = rawPayload["clockChanges"]
+}
 
 @Serializable
 data class BolusEvent(
@@ -82,5 +109,6 @@ data class DayDataset(
 	val iob: List<IobPoint>,
 	val basal: List<BasalPoint>,
 	val deviceStates: List<DeviceStateEvent>,
-	val supplementalEvents: List<SupplementalPumpEvent> = emptyList()
+	val supplementalEvents: List<SupplementalPumpEvent> = emptyList(),
+	val pumpEventsSources: List<PumpEventsSource> = emptyList()
 )
