@@ -61,6 +61,19 @@ class GitHubReleaseTest {
 	}
 
 	@Test
+	fun `official published filename follows buildAPK versioned asset convention`() {
+		val release = requireNotNull(GitHubReleaseParser.parse(payload(tag = "v02.01.007")))
+		assertEquals("TandemSourceRT-v02.01.007.apk", release.apkName)
+		assertEquals("https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.007/TandemSourceRT-v02.01.007.apk", release.apkUrl)
+		assertThrows(RuntimeException::class.java) {
+			GitHubReleaseParser.parse(payload().replace("TandemSourceRT-v02.01.008.apk", "TandemSourceRT.apk"))
+		}
+		assertThrows(RuntimeException::class.java) {
+			GitHubReleaseParser.parse(payload(url = "https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.007/TandemSourceRT-v02.01.008.apk"))
+		}
+	}
+
+	@Test
 	fun `draft and prerelease are ignored`() {
 		assertNull(GitHubReleaseParser.parse(payload(draft = true)))
 		assertNull(GitHubReleaseParser.parse(payload(prerelease = true)))

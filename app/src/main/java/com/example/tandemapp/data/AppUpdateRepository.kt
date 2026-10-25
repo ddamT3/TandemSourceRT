@@ -11,6 +11,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -38,61 +39,46 @@ class AppUpdateRepository(private val context: Context) {
 		} finally { connection.disconnect() }
 	}
 
-	suspend fun download(release: GitHubRelease, progress: suspend (Int) -> Unit): File = withContext(Dispatchers.IO) {
-		val directory = context.cacheDir.resolve("updates")
-		check(directory.isDirectory || directory.mkdirs()) { "Cannot create APK download directory" }
-		val file = File.createTempFile("update-", ".apk", directory)
-		var complete = false
+	suspend fun download(release: GitHubRelease, progress: suspend (Int) -> Unit): File = downloadTemporaryApk(
+		createFile = {
+			val directory = context.cacheDir.resolve("updates")
+			check(directory.isDirectory || directory.mkdirs()) { "Cannot create APK download directory" }
+			File.createTempFile("update-", ".apk", directory)
+		}
+	) { file ->
+		val connection = connection(release.apkUrl,
+			setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"),
+			"application/octet-stream")
 		try {
-			val connection = connection(release.apkUrl,
-				setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"),
-				"application/octet-stream")
-			try {
-				val length = connection.contentLengthLong
-				require(length < 0 || length == release.apkSize) { "APK size differs from the GitHub asset" }
-				connection.inputStream.use { input ->
-					file.outputStream().use { output ->
-						val buffer = ByteArray(32_768)
-						var total = 0L
-						var lastPercent = -1
-						while (true) {
-							currentCoroutineContext().ensureActive()
-							val count = input.read(buffer)
-							if (count < 0) break
-							total += count
-							require(total <= release.apkSize) { "APK exceeds the published asset size" }
-							output.write(buffer, 0, count)
-							val percent = (total * 100 / release.apkSize).toInt()
-							if (percent != lastPercent) { progress(percent); lastPercent = percent }
-						}
-						require(total == release.apkSize) { "APK download is incomplete" }
+			val length = connection.contentLengthLong
+			require(length < 0 || length == release.apkSize) { "APK size differs from the GitHub asset" }
+			connection.inputStream.use { input ->
+				file.outputStream().use { output ->
+					val buffer = ByteArray(32_768)
+					var total = 0L
+					var lastPercent = -1
+					while (true) {
+						currentCoroutineContext().ensureActive()
+						val count = input.read(buffer)
+						if (count < 0) break
+						total += count
+						require(total <= release.apkSize) { "APK exceeds the published asset size" }
+						output.write(buffer, 0, count)
+						val percent = (total * 100 / release.apkSize).toInt()
+						if (percent != lastPercent) { progress(percent); lastPercent = percent }
 					}
+					require(total == release.apkSize) { "APK download is incomplete" }
 				}
-			} finally { connection.disconnect() }
-			verify(file, release)
-			complete = true
-			file
-		} finally { if (!complete) file.delete() }
+			}
+		} finally { connection.disconnect() }
+		verify(file, release)
 	}
 
 	/** Repeated immediately before handing the content URI to Android. Fails closed. */
 	@Suppress("DEPRECATION")
 	suspend fun verify(file: File, release: GitHubRelease) = withContext(Dispatchers.IO) {
 		require(file.isFile && file.length() == release.apkSize) { "Downloaded APK is missing or incomplete" }
-		if (release.sha256 != null) {
-			val digest = MessageDigest.getInstance("SHA-256")
-			file.inputStream().use { input ->
-				val buffer = ByteArray(32_768)
-				while (true) {
-					currentCoroutineContext().ensureActive()
-					val count = input.read(buffer)
-					if (count < 0) break
-					digest.update(buffer, 0, count)
-				}
-			}
-			val actual = digest.digest().joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
-			require(actual == release.sha256) { "APK SHA-256 does not match GitHub. Installation blocked." }
-		}
+		verifyPublishedChecksum(file, release.sha256)
 		val pm = context.packageManager
 		val apk = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
 			?: error("Android cannot verify APK metadata or signing certificates. Installation blocked.")
@@ -109,8 +95,8 @@ class AppUpdateRepository(private val context: Context) {
 
 	private fun signers(info: PackageInfo): Set<String> {
 		val signing = info.signingInfo ?: return emptySet()
-		val certificates = if (signing.hasMultipleSigners()) signing.apkContentsSigners?.toList().orEmpty()
-			else signing.signingCertificateHistory?.lastOrNull()?.let { listOf(it) }.orEmpty()
+		// Compare only current APK signers, for both single- and multiple-signer packages.
+		val certificates = signing.apkContentsSigners?.toList().orEmpty()
 		return certificates.map { signature ->
 			MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") {
 				(it.toInt() and 255).toString(16).padStart(2, '0')
@@ -156,4 +142,42 @@ class AppUpdateRepository(private val context: Context) {
 		}
 		error("Too many GitHub redirects")
 	}
+}
+
+/** Retains ownership until the file is delivered across the cancellable dispatcher handoff. */
+internal suspend fun downloadTemporaryApk(
+	createFile: () -> File,
+	dispatcher: CoroutineDispatcher = Dispatchers.IO,
+	transfer: suspend (File) -> Unit
+): File {
+	var pending: File? = null
+	try {
+		val file = withContext(dispatcher) {
+			val temporary = createFile()
+			pending = temporary
+			currentCoroutineContext().ensureActive()
+			transfer(temporary)
+			currentCoroutineContext().ensureActive()
+			temporary
+		}
+		currentCoroutineContext().ensureActive()
+		pending = null
+		return file
+	} finally { pending?.delete() }
+}
+
+internal suspend fun verifyPublishedChecksum(file: File, expected: String?) {
+	if (expected == null) return // Package, version and current-signer checks still run in verify().
+	val digest = MessageDigest.getInstance("SHA-256")
+	file.inputStream().use { input ->
+		val buffer = ByteArray(32_768)
+		while (true) {
+			currentCoroutineContext().ensureActive()
+			val count = input.read(buffer)
+			if (count < 0) break
+			digest.update(buffer, 0, count)
+		}
+	}
+	val actual = digest.digest().joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
+	require(actual == expected) { "APK SHA-256 does not match GitHub. Installation blocked." }
 }
