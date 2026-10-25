@@ -10,6 +10,10 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.Locale
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
 /** A display-only reference to an untouched original sample. */
@@ -54,6 +58,9 @@ object CgmTimelineResolver {
 		val assignment: String?, val scope: Scope?, val sequence: Int?,
 		val pump: Instant?, val estimated: Instant?, val acquired: Instant?
 	)
+	private data class ClockChange(
+		val scope: Scope, val sequence: Int, val previous: Instant, val next: Instant, val estimated: Instant
+	)
 	private data class Mask(
 		val scope: Scope, val beforeSequence: Int, val start: Instant,
 		val end: Instant, val includeEndpoints: Boolean
@@ -81,10 +88,14 @@ object CgmTimelineResolver {
 		var nextSegment = 0
 
 		// A reception sequence is not an acquisition sequence for a recovered batch.
-		// Require an explicit acquisition timestamp matching pump time; a receipt-time fallback is insufficient.
-		val candidates = rows.filter {
+		val possibleAnchors = rows.filter {
 			!it.point.is_recovered && it.scope != null && it.sequence != null &&
-				it.pump == it.time && it.acquired == it.time
+				it.pump != null && it.pump >= it.time && it.acquired == it.time
+		}
+		val clockChanges = validatedClockChanges(dataset, possibleAnchors)
+		val candidates = possibleAnchors.filter {
+			// Keep the previous strict fallback. Delayed recordings additionally require event-13 calibration.
+			it.pump == it.time || matchesClock(it, clockFor(it, clockChanges))
 		}
 		for ((scope, groupRows) in candidates.groupBy { requireNotNull(it.scope) }) {
 			val bySequence = groupRows.groupBy { requireNotNull(it.sequence) }
@@ -95,6 +106,9 @@ object CgmTimelineResolver {
 			val ordered = bySequence.toSortedMap().values.map { it.first() }
 			// A backwards or repeated estimated instant invalidates this sequence order.
 			if (ordered.mapNotNull { it.estimated }.zipWithNext().any { (a, b) -> b <= a }) continue
+			if (ordered.mapNotNull { row ->
+				row.estimated?.minus(Duration.between(row.time, requireNotNull(row.pump)))
+			}.zipWithNext().any { (a, b) -> b <= a }) continue
 			if (ordered.size < 2) continue
 			var segment = nextSegment++
 			var high = ordered.first().time
@@ -106,7 +120,23 @@ object CgmTimelineResolver {
 					val elapsed = if (prior.estimated != null && row.estimated != null)
 						Duration.between(prior.estimated, row.estimated) else null
 					val offsetChanged = elapsed != null && wallDelta != elapsed
-					if (wallDelta.isNegative || wallDelta.isZero || offsetChanged) {
+					val crossedClocks = clockChanges.filter {
+						it.scope == scope && it.sequence > requireNotNull(prior.sequence) && it.sequence < requireNotNull(row.sequence)
+					}
+					if (crossedClocks.isNotEmpty()) {
+						segment = nextSegment++
+						for (change in crossedClocks) {
+							timeEvents += clockEvent(change)
+							if (change.next < change.previous) {
+								masks += Mask(scope, change.sequence, change.next, change.previous, true)
+							} else {
+								masks += Mask(scope, change.sequence, change.previous, change.next, false)
+							}
+						}
+					} else if (matchesClock(prior, clockFor(prior, clockChanges)) &&
+						matchesClock(row, clockFor(row, clockChanges))) {
+						// Same calibrated clock era: acquisition/receipt lag and subsecond rounding are not clock changes.
+					} else if (wallDelta.isNegative || wallDelta.isZero || offsetChanged) {
 						segment = nextSegment++
 						// A continuity break without a demonstrated clock change is not a TIME event.
 						if (wallDelta.isNegative || offsetChanged) {
@@ -175,6 +205,68 @@ object CgmTimelineResolver {
 				blockedInstants.any { it > prior.time && it < point.time }) continuousSegment++
 			point.copy(segment = continuousSegment)
 		}, timeEvents.distinct().sortedBy { it.time })
+	}
+
+	/** Interpret only the event-13 shape verified in the original pump log. Other shapes stay opaque. */
+	private fun validatedClockChanges(dataset: DayDataset, anchors: List<Row>): List<ClockChange> {
+		val changes = dataset.pumpEventsSources.flatMap { source ->
+			(source.clockChanges as? JsonArray)?.toList().orEmpty()
+		}.mapNotNull { element ->
+			val event = element as? JsonObject ?: return@mapNotNull null
+			if ((event["eventCode"] as? JsonPrimitive)?.intOrNull != 13) return@mapNotNull null
+			val sequence = (event["sequenceNumber"] as? JsonPrimitive)?.intOrNull?.takeIf { it >= 0 } ?: return@mapNotNull null
+			val group = (event["sequenceGroup"] as? JsonPrimitive)?.intOrNull?.takeIf { it >= 0 } ?: return@mapNotNull null
+			val assignment = (event["deviceAssignmentId"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+				?: return@mapNotNull null
+			val next = parseTime((event["pumpDateTime"] as? JsonPrimitive)?.contentOrNull) ?: return@mapNotNull null
+			val estimated = parseTime((event["estimatedDateTime"] as? JsonPrimitive)?.contentOrNull) ?: return@mapNotNull null
+			val properties = event["eventProperties"] as? JsonObject ?: return@mapNotNull null
+			val beforeMillis = (properties["timePrior"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+			val afterMillis = (properties["timeAfter"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
+			if (beforeMillis !in 0..86_399_999L || afterMillis !in 0..86_399_999L) return@mapNotNull null
+			val midnight = next.atOffset(ZoneOffset.UTC).toLocalDate().atStartOfDay().toInstant(ZoneOffset.UTC)
+			if (midnight.plusMillis(afterMillis) != next || beforeMillis == afterMillis) return@mapNotNull null
+			ClockChange(Scope(assignment, group), sequence, midnight.plusMillis(beforeMillis), next, estimated)
+		}
+		// Conflicting records with the same scope/sequence are not usable evidence.
+		return changes.groupBy { it.scope to it.sequence }.values.mapNotNull { it.distinct().singleOrNull() }
+			.filter { change ->
+				val scoped = anchors.filter { it.scope == change.scope }
+				val before = scoped.filter { requireNotNull(it.sequence) < change.sequence }.maxByOrNull { requireNotNull(it.sequence) }
+				val after = scoped.filter { requireNotNull(it.sequence) > change.sequence }.minByOrNull { requireNotNull(it.sequence) }
+				before?.estimated != null && after?.estimated != null &&
+					before.estimated < change.estimated && after.estimated > change.estimated &&
+					matchesClock(before, change) && matchesClock(after, change)
+			}.sortedBy { it.sequence }
+	}
+
+	private fun clockFor(row: Row, changes: List<ClockChange>): ClockChange? {
+		val sequence = row.sequence ?: return null
+		val scoped = changes.filter { it.scope == row.scope }
+		return scoped.lastOrNull { it.sequence < sequence } ?: scoped.firstOrNull { it.sequence > sequence }
+	}
+
+	private fun matchesClock(row: Row, change: ClockChange?): Boolean {
+		if (change == null || row.scope != change.scope) return false
+		val pump = row.pump ?: return false
+		val estimated = row.estimated ?: return false
+		val sequence = row.sequence ?: return false
+		if (sequence == change.sequence) return false
+		val expected = Duration.between(change.estimated, if (sequence < change.sequence) change.previous else change.next)
+		// pumpDateTime is second-resolution; event-13 timePrior/timeAfter carry milliseconds.
+		return Duration.between(estimated, pump).minus(expected).abs() < Duration.ofSeconds(1)
+	}
+
+	private fun clockEvent(change: ClockChange): DeviceStateEvent {
+		val difference = Duration.between(change.previous, change.next)
+		val absolute = difference.abs()
+		val delta = String.format(Locale.US, "%s%02d:%02d:%02d", if (difference.isNegative) "-" else "+",
+			absolute.toHours(), absolute.toMinutes() % 60, absolute.seconds % 60) +
+			if (absolute.nano == 0) "" else String.format(Locale.US, ".%09d", absolute.nano).trimEnd('0')
+		return DeviceStateEvent(
+			time = change.next.toString(), eventType = CgmTimeline.TIME_EVENT_TYPE, eventLabel = "TIME", sourceEventId = 13,
+			eventSubtype = "Previous pump time: ${change.previous}\nNew pump time: ${change.next}\nClock difference: $delta"
+		)
 	}
 
 	private fun timeEvent(previous: Row, current: Row, difference: Duration?): DeviceStateEvent =
