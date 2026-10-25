@@ -117,26 +117,29 @@ fun LoginScreen(
 		}
 
 		Card(modifier = Modifier.fillMaxWidth()) {
-			Row(
-				modifier = Modifier.fillMaxWidth().padding(16.dp),
-				horizontalArrangement = Arrangement.SpaceBetween,
-				verticalAlignment = Alignment.CenterVertically
-			) {
-				Text(
-					"App version",
-					style = MaterialTheme.typography.bodyLarge,
-					fontWeight = FontWeight.SemiBold
-				)
-				Text(
-					text = String.format(
-						Locale.US,
-						"v%s.%03d",
-						BuildConfig.VERSION_NAME,
-						BuildConfig.VERSION_CODE % 1000
-					),
-					style = MaterialTheme.typography.bodyLarge,
-					fontWeight = FontWeight.Medium
-				)
+			Column {
+				Row(
+					modifier = Modifier.fillMaxWidth().padding(16.dp),
+					horizontalArrangement = Arrangement.SpaceBetween,
+					verticalAlignment = Alignment.CenterVertically
+				) {
+					Text(
+						"App version",
+						style = MaterialTheme.typography.bodyLarge,
+						fontWeight = FontWeight.SemiBold
+					)
+					Text(
+						text = String.format(
+							Locale.US,
+							"v%s.%03d",
+							BuildConfig.VERSION_NAME,
+							BuildConfig.VERSION_CODE % 1000
+						),
+						style = MaterialTheme.typography.bodyLarge,
+						fontWeight = FontWeight.Medium
+					)
+				}
+				AppUpdateControls(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
 			}
 		}
 	}
