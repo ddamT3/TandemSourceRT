@@ -2,6 +2,7 @@ package com.example.tandemapp.data
 
 import android.content.Context
 import android.os.Environment
+import android.os.SystemClock
 import android.util.Log
 import com.example.tandemapp.model.DayDataset
 import kotlinx.coroutines.Dispatchers
@@ -23,17 +24,24 @@ class EmbeddedTandemRepository(
 	private val authProvider: TandemAuthProvider = KotlinTandemAuthProvider()
 
 	suspend fun loadLiveHistory(username: String, password: String, selectedDate: LocalDate? = null): LiveHistoryResult = withContext(Dispatchers.IO) {
+		val loadStarted = SystemClock.elapsedRealtime()
+		Log.i("TandemStartupPerf", "live history auth start elapsedRealtimeMs=$loadStarted")
 		val auth = when (val result = getAuthenticatedContext(username, password)) {
 			is TandemAuthContextResult.Success -> result.context
-			is TandemAuthContextResult.Failure ->
+			is TandemAuthContextResult.Failure -> {
+				Log.i("TandemStartupPerf", "live history auth failed elapsedMs=${SystemClock.elapsedRealtime() - loadStarted}")
 				return@withContext LiveHistoryResult.AuthenticationFailure(result.message)
+			}
 		}
+		Log.i("TandemStartupPerf", "live history auth end elapsedRealtimeMs=${SystemClock.elapsedRealtime()} elapsedMs=${SystemClock.elapsedRealtime() - loadStarted}")
 		return@withContext try {
 			Log.d(tag, "Kotlin pump-event pipeline selectedDate=$selectedDate")
 			LiveHistoryResult.Success(PumpEventsRepository().load(auth, selectedDate))
 		} catch (e: Exception) {
 			Log.e(tag, "Errore caricamento pump-event Kotlin", e)
 			LiveHistoryResult.DataFailure(e.message)
+		} finally {
+			Log.i("TandemStartupPerf", "live history end elapsedRealtimeMs=${SystemClock.elapsedRealtime()} elapsedMs=${SystemClock.elapsedRealtime() - loadStarted}")
 		}
 	}
 

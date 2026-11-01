@@ -41,6 +41,7 @@ import com.example.tandemapp.model.DayDataset
 import com.example.tandemapp.model.DeviceStateEvent
 import com.example.tandemapp.model.IobPoint
 import com.example.tandemapp.viewmodel.UserModeSegment
+import com.example.tandemapp.viewmodel.DashboardEventTimeline
 import com.example.tandemapp.viewmodel.HomeViewModel
 import com.example.tandemapp.viewmodel.NavigationDirection
 import com.example.tandemapp.viewmodel.SnapshotField
@@ -380,7 +381,7 @@ private fun rememberCursorSnapshot(
 	val basalValue = currentBasal(dataset.basal, centerTime)
 	val bolusAtCursor = findBolusAtCursor(dataset.bolus, centerTime)
 	val choAtCursor = findChoAtCursor(dataset, centerTime)
-	val eventAtCursor = findEventAtCursor(dashboardEvents, centerTime)
+	val eventAtCursor = DashboardEventTimeline.labelAt(dashboardEvents, centerTime)
 
 	return CursorSnapshot(
 		day = centerTime.format(dayFormatter),
@@ -458,53 +459,6 @@ private fun findChoAtCursor(
 		.filter { (time, _) -> abs(Duration.between(time, targetTime).seconds) <= toleranceSeconds }
 		.minByOrNull { (time, _) -> abs(Duration.between(time, targetTime).seconds) }
 		?.second
-}
-
-private fun findEventAtCursor(
-	events: List<com.example.tandemapp.model.DeviceStateEvent>,
-	targetTime: OffsetDateTime,
-	toleranceSeconds: Long = 15 * 60
-): String? {
-	val nearest = events
-		.filterNot { event ->
-			event.PumpControlState.equals("Pinning", true) ||
-				event.PumpControlState.equals("Pining", true) ||
-				event.PumpControlState.equals("Closed Loop", true) ||
-				event.PumpControlState.equals("Close Loop", true)
-		}
-		.mapNotNull { event ->
-			parseChartTime(event.time)?.let { parsedTime -> parsedTime to event }
-		}
-		.filter { (time, _) -> abs(Duration.between(time, targetTime).seconds) <= toleranceSeconds }
-		.minByOrNull { (time, _) -> abs(Duration.between(time, targetTime).seconds) }
-		?.second
-
-	return when {
-		nearest == null -> null
-		nearest.eventType.equals("profile_changed", true) ->
-			nearest.eventSubtype?.takeIf { it.isNotBlank() }
-				?: "Change profile"
-		!shortEventLabel(nearest.eventType, nearest.eventLabel).isNullOrBlank() -> shortEventLabel(nearest.eventType, nearest.eventLabel)
-		nearest.CurrentUserMode.equals("exercise", true) || nearest.CurrentUserMode.equals("exercising", true) -> "EX"
-		nearest.CurrentUserMode.equals("sleep", true) ||
-			nearest.CurrentUserMode.equals("sleeping", true) ||
-			nearest.CurrentUserMode.equals("night", true) ||
-			nearest.CurrentUserMode.equals("notte", true) -> "Sleep"
-		nearest.PumpControlState.equals("No Control", true) -> "!"
-		else -> nearest.CurrentUserMode ?: nearest.PumpControlState
-	}
-}
-
-private fun shortEventLabel(eventType: String?, eventLabel: String?): String? {
-	return when {
-		eventType.equals("pump_suspended", true) -> "Stop"
-		eventType.equals("pump_resumed", true) -> "Restart"
-		eventType.equals("cartridge_site_change", true) -> "Change set"
-		eventType.equals("sensor_session_ended", true) -> "End Sensor"
-		eventType.equals("profile_changed", true) -> "Change profile"
-		!eventLabel.isNullOrBlank() -> eventLabel
-		else -> null
-	}
 }
 
 private fun interpolateNumericSeries(

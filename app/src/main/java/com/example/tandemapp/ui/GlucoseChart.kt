@@ -668,14 +668,6 @@ fun GlucoseChart(
 					drawCircle(fill, faceRadius, Offset(cx, cy), style = Stroke(width = 1.5f * mScale))
 					drawLine(fill, Offset(cx, cy), Offset(cx, cy - faceRadius * 0.65f), 1.5f * mScale)
 					drawLine(fill, Offset(cx, cy), Offset(cx + faceRadius * 0.55f, cy), 1.5f * mScale)
-					val timePaint = Paint().apply {
-						color = fill.toArgbInt()
-						textAlign = Paint.Align.CENTER
-						textSize = GlucoseChartLayout.fontEvent * 0.65f * mScale
-						isAntiAlias = true
-						isFakeBoldText = true
-					}
-					drawContext.canvas.nativeCanvas.drawText("TIME", cx, cy - r - 4f * mScale, timePaint)
 				}
 				"pump_suspended" -> {
 					val halfSize = GlucoseChartLayout.EventMarkers.stopSquareHalfSize * mScale

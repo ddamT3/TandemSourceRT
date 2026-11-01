@@ -1,5 +1,7 @@
 package com.example.tandemapp.viewmodel
 
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.example.tandemapp.model.DayDataset
@@ -74,7 +76,10 @@ class HomeViewModel : ViewModel() {
 	}
 
 	fun setLiveData(data: DayDataset, anchorDate: LocalDate = LocalDate.now()) {
+		val processingStarted = SystemClock.elapsedRealtime()
+		Log.i("TandemStartupPerf", "dashboard processing start elapsedRealtimeMs=$processingStarted")
 		val cgmTimeline = CgmTimelineResolver.resolve(data)
+		Log.i("TandemStartupPerf", "dashboard cgm resolve end elapsedMs=${SystemClock.elapsedRealtime() - processingStarted}")
 		val available = cgmTimeline.points.map { it.point }
 			.mapNotNull { runCatching { LocalDate.parse(it.time.substring(0, 10)) }.getOrNull() }
 			.distinct()
@@ -97,6 +102,7 @@ class HomeViewModel : ViewModel() {
 			visibleWindowStart = center.minusSeconds(halfWindowSeconds),
 			visibleWindowEnd = center.plusSeconds(halfWindowSeconds)
 		)
+		Log.i("TandemStartupPerf", "dashboard state published elapsedRealtimeMs=${SystemClock.elapsedRealtime()} elapsedMs=${SystemClock.elapsedRealtime() - processingStarted}")
 	}
 
 	fun selectAnchorDate(date: LocalDate) {
@@ -229,15 +235,9 @@ class HomeViewModel : ViewModel() {
 						direction = direction
 					)
 
-					SnapshotField.EVENT -> navigateDistinct(
-						pairs = state.value.dashboardEvents.mapNotNull { event ->
-							parseChartTime(event.time)?.let { time ->
-								mapEventValue(event.eventType, event.eventSubtype, event.CurrentUserMode, event.PumpControlState)?.let { value ->
-									time to value
-								}
-							}
-						},
-						currentTime = centerTime,
+					SnapshotField.EVENT -> DashboardEventTimeline.navigate(
+						events = state.value.dashboardEvents,
+						cursor = centerTime,
 						direction = direction
 					)
 
@@ -389,29 +389,4 @@ class HomeViewModel : ViewModel() {
 		}
 	}
 
-	private fun mapEventValue(eventType: String?, eventSubtype: String?, currentUserMode: String?, pumpControlState: String?): String? {
-		return when {
-			pumpControlState.equals("Pinning", true) ||
-				pumpControlState.equals("Pining", true) ||
-				pumpControlState.equals("Closed Loop", true) ||
-				pumpControlState.equals("Close Loop", true) -> null
-			eventType == CgmTimeline.TIME_EVENT_TYPE -> eventSubtype ?: "TIME"
-			eventType.equals("pump_suspended", true) -> "Stop"
-			eventType.equals("pump_resumed", true) -> "Restart"
-			eventType.equals("cartridge_site_change", true) -> "Change set"
-			eventType.equals("sensor_session_ended", true) -> "End Sensor"
-			eventType.equals("profile_changed", true) ->
-				eventSubtype?.takeIf { it.isNotBlank() }
-					?: "Change profile"
-			currentUserMode.equals("normal", true) -> "Norm"
-			currentUserMode.equals("exercising", true) -> "EX"
-			currentUserMode.equals("sleep", true) ||
-				currentUserMode.equals("sleeping", true) ||
-				currentUserMode.equals("night", true) -> "Sleep"
-			pumpControlState.equals("No Control", true) -> "!"
-			!currentUserMode.isNullOrBlank() -> currentUserMode
-			!pumpControlState.isNullOrBlank() -> pumpControlState
-			else -> null
-		}
-	}
 }

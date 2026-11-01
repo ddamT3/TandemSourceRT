@@ -3,6 +3,7 @@ package com.example.tandemapp.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
+import android.os.SystemClock
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -135,6 +136,10 @@ fun AppRoot(vm: HomeViewModel) {
 		else -> null
 	}
 
+	LaunchedEffect(currentScreen, pageDataStatus) {
+		Log.i("TandemStartupPerf", "ui status observed screen=$currentScreen status=$pageDataStatus elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
+	}
+
 	val prefs = remember {
 		context.getSharedPreferences("login_prefs", Context.MODE_PRIVATE)
 	}
@@ -199,13 +204,31 @@ fun AppRoot(vm: HomeViewModel) {
 		}
 	}
 
+	fun saveChartCache() {
+		scope.launch {
+			val saveStarted = SystemClock.elapsedRealtime()
+			try {
+				chartCacheRepo.save()
+				Log.i("TandemStartupPerf", "chart cache save end elapsedMs=${SystemClock.elapsedRealtime() - saveStarted}")
+			} catch (e: kotlinx.coroutines.CancellationException) {
+				throw e
+			} catch (_: Exception) {
+				// The merged dashboard data remains visible even if persistence fails.
+				Log.w("TandemStartupPerf", "chart cache save failed elapsedMs=${SystemClock.elapsedRealtime() - saveStarted}")
+			}
+		}
+	}
+
 	LaunchedEffect(Unit) {
 		if (loginRememberMe && loginEmail.isNotBlank() && loginPassword.isNotBlank()) {
+			val cacheReadStarted = SystemClock.elapsedRealtime()
 			val cachedChart = chartCacheRepo.read()
+			Log.i("TandemStartupPerf", "chart cache read end elapsedMs=${SystemClock.elapsedRealtime() - cacheReadStarted} present=${cachedChart != null}")
 			if (cachedChart != null) {
 				val today = LocalDate.now()
 				vm.setLiveData(cachedChart, today)
 				homeDataStatus = PageDataStatus.Cached
+				Log.i("TandemStartupPerf", "home status assigned status=Cached elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 				vm.jumpToLatest()
 				currentScreen = AppScreen.Home
 			}
@@ -219,10 +242,14 @@ fun AppRoot(vm: HomeViewModel) {
 
 				if (result is LiveHistoryResult.Success) {
 					loginError = AUTH_SUCCESS_MESSAGE
-					val cachedResult = chartCacheRepo.update(result.dataset)
+					val cacheUpdateStarted = SystemClock.elapsedRealtime()
+					val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
+					Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
 					vm.selectAnchorDate(today)
 					vm.setLiveData(cachedResult.dataset, today)
 					homeDataStatus = PageDataStatus.Updated
+					Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
+					saveChartCache()
 					sensorSetRepo.update(result.dataset, null)?.let {
 						sensorSetState = SensorSetUiState.Ready(it)
 						synchronizeCalendar(it)
@@ -364,9 +391,13 @@ fun AppRoot(vm: HomeViewModel) {
 					loginError = AUTH_SUCCESS_MESSAGE
 					val anchorDate = vm.state.value.anchorDate
 					if (isCurrentRequestWindow(anchorDate)) {
-						val cachedResult = chartCacheRepo.update(result.dataset)
+						val cacheUpdateStarted = SystemClock.elapsedRealtime()
+						val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
+						Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
 						vm.setLiveData(cachedResult.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Updated
+						Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
+						saveChartCache()
 						sensorSetRepo.update(result.dataset, null)?.let { updated ->
 							sensorSetState = SensorSetUiState.Ready(updated)
 							synchronizeCalendar(updated)
@@ -374,6 +405,7 @@ fun AppRoot(vm: HomeViewModel) {
 					} else {
 						vm.setLiveData(result.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Historical
+						Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 					}
 				} else {
 					loginError = when (result) {
@@ -413,9 +445,13 @@ fun AppRoot(vm: HomeViewModel) {
 						if (result is LiveHistoryResult.Success) {
 							loginError = AUTH_SUCCESS_MESSAGE
 							if (isCurrentRequestWindow(selectedDate)) {
-								val cachedResult = chartCacheRepo.update(result.dataset)
+								val cacheUpdateStarted = SystemClock.elapsedRealtime()
+								val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
+								Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
 								vm.setLiveData(cachedResult.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Updated
+								Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
+								saveChartCache()
 								sensorSetRepo.update(result.dataset, null)?.let { updated ->
 									sensorSetState = SensorSetUiState.Ready(updated)
 									synchronizeCalendar(updated)
@@ -423,6 +459,7 @@ fun AppRoot(vm: HomeViewModel) {
 							} else {
 								vm.setLiveData(result.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Historical
+								Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 							}
 							currentScreen = AppScreen.Home
 						} else {
@@ -572,9 +609,13 @@ fun AppRoot(vm: HomeViewModel) {
 							loginError = AUTH_SUCCESS_MESSAGE
 							val anchorDate = vm.state.value.anchorDate
 							if (isCurrentRequestWindow(anchorDate)) {
-								val cachedResult = chartCacheRepo.update(result.dataset)
+								val cacheUpdateStarted = SystemClock.elapsedRealtime()
+								val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
+								Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
 								vm.setLiveData(cachedResult.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Updated
+								Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
+								saveChartCache()
 								sensorSetRepo.update(result.dataset, null)?.let { updated ->
 									sensorSetState = SensorSetUiState.Ready(updated)
 									synchronizeCalendar(updated)
@@ -582,6 +623,7 @@ fun AppRoot(vm: HomeViewModel) {
 							} else {
 								vm.setLiveData(result.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Historical
+								Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 							}
 							currentScreen = AppScreen.Home
 						} else {

@@ -1,6 +1,8 @@
 package com.example.tandemapp.data
 
 import com.example.tandemapp.model.DayDataset
+import android.os.SystemClock
+import android.util.Log
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URLEncoder
@@ -31,9 +33,23 @@ class PumpEventsRepository {
 	)
 
 	fun load(auth: TandemAuthContext, selectedDate: LocalDate?): DayDataset {
+		val assignmentsStarted = SystemClock.elapsedRealtime()
 		val assignments = getAssignments(auth)
+		Log.i("TandemStartupPerf", "assignments ready elapsedMs=${SystemClock.elapsedRealtime() - assignmentsStarted} count=${assignments.size}")
 		if (assignments.isEmpty()) throw IllegalStateException("Nessun assignmentId disponibile")
-		return merge(assignments.map { PumpEventsAdapter.decode(downloadEvents(auth, it.id, selectedDate), requestedAssignmentId = it.id) })
+		val datasets = assignments.mapIndexed { index, assignment ->
+			val batchStarted = SystemClock.elapsedRealtime()
+			Log.i("TandemStartupPerf", "assignment batch start elapsedRealtimeMs=$batchStarted index=${index + 1} total=${assignments.size} requests=1 pagination=none")
+			val body = downloadEvents(auth, assignment.id, selectedDate)
+			val decodeStarted = SystemClock.elapsedRealtime()
+			val dataset = PumpEventsAdapter.decode(body, requestedAssignmentId = assignment.id)
+			Log.i("TandemStartupPerf", "assignment decode end index=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - decodeStarted} batchElapsedMs=${SystemClock.elapsedRealtime() - batchStarted}")
+			dataset
+		}
+		val mergeStarted = SystemClock.elapsedRealtime()
+		val merged = merge(datasets)
+		Log.i("TandemStartupPerf", "assignment merge end elapsedMs=${SystemClock.elapsedRealtime() - mergeStarted}")
+		return merged
 	}
 
 	fun exportRaw(auth: TandemAuthContext, selectedDate: LocalDate?, exportDir: File): PumpEventsExportResult {
@@ -66,7 +82,8 @@ class PumpEventsRepository {
 		val body = getJson(
 			"https://source.eu.tandemdiabetes.com/api/pumpers/pumpers/${auth.pumperId}",
 			auth.accessToken,
-			60_000
+			60_000,
+			"assignments"
 		)
 		val root = json.parseToJsonElement(body).jsonObject
 		return root["devices"]?.jsonArray.orEmpty().mapNotNull { item ->
@@ -84,7 +101,8 @@ class PumpEventsRepository {
 		val body = getJson(
 			"https://source.eu.tandemdiabetes.com/api/reports/bff/pumper/${auth.pumperId}",
 			auth.accessToken,
-			60_000
+			60_000,
+			"reports_assignment"
 		)
 		val pumps = json.parseToJsonElement(body).jsonObject["pumps"]?.jsonArray.orEmpty()
 			.mapNotNull { item ->
@@ -129,11 +147,14 @@ class PumpEventsRepository {
 		return getJson(
 			"https://source.eu.tandemdiabetes.com/api/reports/bff/pump-logs/$assignmentId?$query",
 			auth.accessToken,
-			120_000
+			120_000,
+			"pump_logs"
 		)
 	}
 
-	private fun getJson(url: String, accessToken: String, timeout: Int): String {
+	private fun getJson(url: String, accessToken: String, timeout: Int, operation: String): String {
+		val started = SystemClock.elapsedRealtime()
+		Log.i("TandemStartupPerf", "http start operation=$operation elapsedRealtimeMs=$started")
 		val connection = URL(url).openConnection() as HttpURLConnection
 		return try {
 			connection.requestMethod = "GET"
@@ -143,13 +164,17 @@ class PumpEventsRepository {
 			connection.setRequestProperty("Authorization", "Bearer $accessToken")
 			connection.setRequestProperty("User-Agent", "TandemSourceRT/Android")
 			val status = connection.responseCode
+			val headersAt = SystemClock.elapsedRealtime()
+			Log.i("TandemStartupPerf", "http headers operation=$operation status=$status elapsedMs=${headersAt - started}")
 			val body = (if (status in 200..299) connection.inputStream else connection.errorStream)
 				?.bufferedReader()?.use { it.readText() }.orEmpty()
+			Log.i("TandemStartupPerf", "http body end operation=$operation elapsedMs=${SystemClock.elapsedRealtime() - headersAt}")
 			if (status != HttpURLConnection.HTTP_OK) {
 				throw IllegalStateException("Errore pump-event HTTP $status: ${body.take(300)}")
 			}
 			body
 		} finally {
+			Log.i("TandemStartupPerf", "http end operation=$operation elapsedMs=${SystemClock.elapsedRealtime() - started}")
 			connection.disconnect()
 		}
 	}
