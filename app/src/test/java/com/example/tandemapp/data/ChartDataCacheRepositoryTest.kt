@@ -18,7 +18,7 @@ import org.junit.rules.TemporaryFolder
 
 class ChartDataCacheRepositoryTest {
 	@get:Rule val temporary = TemporaryFolder()
-	private fun cache() = ChartDataCacheRepository(File(temporary.root, "chart.json"))
+	private fun cache() = ChartDataCacheRepository(File(temporary.root, "chart.json"), today = { java.time.LocalDate.of(2026, 10, 25) })
 
 	@Test
 	fun `new readings survive a rollback even if maximum timestamp decreases`() = runBlocking<Unit> {
@@ -33,7 +33,7 @@ class ChartDataCacheRepositoryTest {
 		assertEquals(listOf(0, 1, 0), result.dataset.cgm.map { it.source!!.payloadIndex })
 		assertEquals(listOf(old.pumpEventsSources.single(), incoming.pumpEventsSources.single()), result.dataset.pumpEventsSources)
 		assertEquals(listOf(180), CgmTimelineResolver.resolve(result.dataset).points.map { it.point.value })
-		assertEquals(result.dataset, ChartDataCacheRepository(File(temporary.root, "chart.json")).read())
+		assertEquals(result.dataset, ChartDataCacheRepository(File(temporary.root, "chart.json"), today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 	}
 
 	@Test
@@ -77,15 +77,18 @@ class ChartDataCacheRepositoryTest {
 	@Test
 	fun `previous cache envelope can be read and upgraded without losing originals`() = runBlocking<Unit> {
 		val file = File(temporary.root, "chart.json")
+		                File(temporary.root, "chart.json.version").writeText(
+                    "p0c2b-v3-days-${com.example.tandemapp.config.AppConfig.HISTORY_DAYS}"
+                )
 		file.writeText("""{"latestTimestamp":"2026-10-25T02:05:00Z","dataset":{
 			"cgm":[{"time":"2026-10-25T02:05:00Z","value":110}],
 			"bolus":[],"carbs":[],"iob":[],"basal":[],"deviceStates":[]}}""")
-		val cache = ChartDataCacheRepository(file)
-		assertNotNull(ChartDataCacheRepository(File(temporary.root, "chart.json")).read())
+		val cache = ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) })
+		assertNotNull(ChartDataCacheRepository(File(temporary.root, "chart.json"), today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 		val result = cache.update(cgmDataset(reading(2, "02:00:00", value = 180)))
 		assertFalse(result.usedCachedData)
 		assertEquals(listOf(180, 110), result.dataset.cgm.map { it.value })
-		assertEquals(result.dataset, ChartDataCacheRepository(File(temporary.root, "chart.json")).read())
+		assertEquals(result.dataset, ChartDataCacheRepository(File(temporary.root, "chart.json"), today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 		assertEquals(result.dataset, Json.decodeFromString<com.example.tandemapp.model.DayDataset>(Json.encodeToString(result.dataset)))
 	}
 
@@ -93,7 +96,7 @@ class ChartDataCacheRepositoryTest {
 	fun `failed atomic replacement keeps old cache and merged originals for retry`() = runBlocking<Unit> {
 		val file = File(temporary.root, "chart.json")
 		var failWrite = false
-		val cache = ChartDataCacheRepository(file) { source, destination ->
+		val cache = ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }) { source, destination ->
 			if (failWrite) throw IOException("simulated replacement failure")
 			java.nio.file.Files.move(source.toPath(), destination.toPath(),
 				java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
@@ -108,15 +111,15 @@ class ChartDataCacheRepositoryTest {
 			fail("Expected write failure")
 		} catch (_: IOException) { }
 		assertArrayEquals(originalBytes, file.readBytes())
-		assertEquals(original, ChartDataCacheRepository(file).read())
+		assertEquals(original, ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 		assertEquals(merged.dataset, cache.read())
 		assertEquals(2, merged.dataset.cgm.size)
 		assertEquals(2, merged.dataset.pumpEventsSources.size)
 		assertEquals(listOf(180), CgmTimelineResolver.resolve(merged.dataset).points.map { it.point.value })
-		assertEquals(listOf("chart.json"), temporary.root.listFiles()!!.map { it.name })
+		assertEquals(listOf("chart.json", "chart.json.version"), temporary.root.listFiles()!!.map { it.name }.sorted())
 		failWrite = false
 		cache.save()
-		assertEquals(merged.dataset, ChartDataCacheRepository(file).read())
+		assertEquals(merged.dataset, ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 	}
 
 	@Test
@@ -124,7 +127,7 @@ class ChartDataCacheRepositoryTest {
 		val entered = CountDownLatch(1)
 		val release = CountDownLatch(1)
 		val file = File(temporary.root, "chart.json")
-		val cache = ChartDataCacheRepository(file) { source, destination ->
+		val cache = ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }) { source, destination ->
 			entered.countDown()
 			check(release.await(5, TimeUnit.SECONDS))
 			java.nio.file.Files.move(source.toPath(), destination.toPath(),
@@ -141,14 +144,14 @@ class ChartDataCacheRepositoryTest {
 		} finally { release.countDown() }
 		writer.await()
 		cache.save()
-		assertEquals(cache.read(), ChartDataCacheRepository(file).read())
-		assertEquals(2, ChartDataCacheRepository(file).read()!!.cgm.size)
+		assertEquals(cache.read(), ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }).read())
+		assertEquals(2, ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }).read()!!.cgm.size)
 	}
 
 	@Test
 	fun `stream encoding failure preserves previous file and removes partial temporary`() = runBlocking<Unit> {
 		val file = File(temporary.root, "chart.json")
-		val cache = ChartDataCacheRepository(file)
+		val cache = ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) })
 		val original = cgmDataset(reading(1, "02:00:00"))
 		cache.update(original)
 		val originalBytes = file.readBytes()
@@ -160,8 +163,170 @@ class ChartDataCacheRepositoryTest {
 			fail("Expected stream encoding failure")
 		} catch (_: kotlinx.serialization.SerializationException) { }
 		assertArrayEquals(originalBytes, file.readBytes())
-		assertEquals(original, ChartDataCacheRepository(file).read())
+		assertEquals(original, ChartDataCacheRepository(file, today = { java.time.LocalDate.of(2026, 10, 25) }).read())
 		assertEquals(merged.dataset, cache.read())
-		assertEquals(listOf("chart.json"), temporary.root.listFiles()!!.map { it.name })
+		assertEquals(listOf("chart.json", "chart.json.version"), temporary.root.listFiles()!!.map { it.name }.sorted())
 	}
+
+    @Test
+    fun `compact removes unreferenced payloads without clock changes`() = runBlocking<Unit> {
+        val original = cgmDataset(reading(1, "02:00:00"))
+        val referenced = original.pumpEventsSources.single()
+
+        val unused = referenced.copy(
+            requestedAssignmentId = "unused",
+            rawPayload = kotlinx.serialization.json.JsonObject(
+                mapOf(
+                    "events" to kotlinx.serialization.json.JsonArray(emptyList())
+                )
+            )
+        )
+
+        val input = original.copy(
+            pumpEventsSources = listOf(unused, referenced),
+            cgm = original.cgm.map {
+                it.copy(
+                    source = it.source!!.copy(payloadIndex = 1)
+                )
+            }
+        )
+
+        val result = cache().update(input).dataset
+
+        assertEquals(listOf(referenced), result.pumpEventsSources)
+        assertEquals(0, result.cgm.single().source!!.payloadIndex)
+        assertEquals(
+            original.cgm.single().source!!.eventIndex,
+            result.cgm.single().source!!.eventIndex
+        )
+        assertEquals(
+            referenced.rawPayload,
+            result.pumpEventsSources.single().rawPayload
+        )
+    }
+
+    @Test
+    fun `compact preserves unreferenced clock change payloads`() = runBlocking<Unit> {
+        val original = cgmDataset(reading(1, "02:00:00"))
+        val referenced = original.pumpEventsSources.single()
+
+        val clockPayload = kotlinx.serialization.json.JsonObject(
+            mapOf(
+                "events" to kotlinx.serialization.json.JsonArray(emptyList()),
+                "clockChanges" to kotlinx.serialization.json.JsonArray(
+                    listOf(
+                        kotlinx.serialization.json.JsonObject(
+                            mapOf(
+                                "opaque" to kotlinx.serialization.json.JsonPrimitive(true)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val clockSource = referenced.copy(
+            requestedAssignmentId = "clock-source",
+            rawPayload = clockPayload
+        )
+
+        val unused = referenced.copy(
+            requestedAssignmentId = "unused",
+            rawPayload = kotlinx.serialization.json.JsonObject(
+                mapOf(
+                    "events" to kotlinx.serialization.json.JsonArray(emptyList())
+                )
+            )
+        )
+
+        val result = cache().update(
+            original.copy(
+                pumpEventsSources = listOf(referenced, unused, clockSource)
+            )
+        ).dataset
+
+        assertEquals(
+            listOf(referenced, clockSource),
+            result.pumpEventsSources
+        )
+        assertEquals(0, result.cgm.single().source!!.payloadIndex)
+        assertEquals(
+            clockPayload["clockChanges"],
+            result.pumpEventsSources[1].clockChanges
+        )
+        assertEquals(
+            clockPayload,
+            result.pumpEventsSources[1].rawPayload
+        )
+    }
+
+    @Test
+    fun `compact rebases multiple payload indices and keeps event indices`() = runBlocking<Unit> {
+        val a = cgmDataset(reading(1, "02:00:00"))
+        val b = cgmDataset(reading(2, "02:05:00"))
+
+        val sourceA = a.pumpEventsSources.single()
+        val sourceB = b.pumpEventsSources.single().copy(
+            requestedAssignmentId = "source-B"
+        )
+
+        val unused = sourceA.copy(
+            requestedAssignmentId = "unused",
+            rawPayload = kotlinx.serialization.json.JsonObject(
+                mapOf(
+                    "events" to kotlinx.serialization.json.JsonArray(emptyList())
+                )
+            )
+        )
+
+        val second = b.cgm.single().copy(
+            source = b.cgm.single().source!!.copy(
+                payloadIndex = 2
+            )
+        )
+
+        val input = a.copy(
+            cgm = a.cgm + second,
+            pumpEventsSources = listOf(sourceA, unused, sourceB)
+        )
+
+        val result = cache().update(input).dataset
+
+        assertEquals(
+            listOf(sourceA, sourceB),
+            result.pumpEventsSources
+        )
+        assertEquals(
+            listOf(0, 1),
+            result.cgm.map { it.source!!.payloadIndex }
+        )
+        assertEquals(
+            input.cgm.map { it.source!!.eventIndex },
+            result.cgm.map { it.source!!.eventIndex }
+        )
+    }
+
+    @Test
+    fun `compact does not discard payloads when source index is invalid`() = runBlocking<Unit> {
+        val original = cgmDataset(reading(1, "02:00:00"))
+
+        val invalid = original.copy(
+            cgm = original.cgm.map {
+                it.copy(
+                    source = it.source!!.copy(payloadIndex = 99)
+                )
+            }
+        )
+
+        val result = cache().update(invalid).dataset
+
+        assertEquals(
+            invalid.pumpEventsSources,
+            result.pumpEventsSources
+        )
+        assertEquals(
+            99,
+            result.cgm.single().source!!.payloadIndex
+        )
+    }
 }

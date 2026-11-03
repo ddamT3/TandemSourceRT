@@ -8,7 +8,7 @@
 	<uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
 
 	<application
-		android:label="Tandem App ST"
+		android:label="TandemSourceRT"
 		android:theme="@style/Theme.TandemApp">
 		<provider
 			android:name="androidx.core.content.FileProvider"

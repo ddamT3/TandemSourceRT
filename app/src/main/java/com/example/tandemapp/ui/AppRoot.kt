@@ -226,7 +226,7 @@ fun AppRoot(vm: HomeViewModel) {
 			Log.i("TandemStartupPerf", "chart cache read end elapsedMs=${SystemClock.elapsedRealtime() - cacheReadStarted} present=${cachedChart != null}")
 			if (cachedChart != null) {
 				val today = LocalDate.now()
-				vm.setLiveData(cachedChart, today)
+				vm.setLiveDataOffMain(cachedChart, today)
 				homeDataStatus = PageDataStatus.Cached
 				Log.i("TandemStartupPerf", "home status assigned status=Cached elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 				vm.jumpToLatest()
@@ -246,7 +246,7 @@ fun AppRoot(vm: HomeViewModel) {
 					val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
 					Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
 					vm.selectAnchorDate(today)
-					vm.setLiveData(cachedResult.dataset, today)
+					vm.setLiveDataOffMain(cachedResult.dataset, today)
 					homeDataStatus = PageDataStatus.Updated
 					Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 					saveChartCache()
@@ -394,7 +394,7 @@ fun AppRoot(vm: HomeViewModel) {
 						val cacheUpdateStarted = SystemClock.elapsedRealtime()
 						val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
 						Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
-						vm.setLiveData(cachedResult.dataset, anchorDate)
+						vm.setLiveDataOffMain(cachedResult.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Updated
 						Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 						saveChartCache()
@@ -403,7 +403,7 @@ fun AppRoot(vm: HomeViewModel) {
 							synchronizeCalendar(updated)
 						}
 					} else {
-						vm.setLiveData(result.dataset, anchorDate)
+						vm.setLiveDataOffMain(result.dataset, anchorDate)
 						homeDataStatus = PageDataStatus.Historical
 						Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 					}
@@ -448,7 +448,7 @@ fun AppRoot(vm: HomeViewModel) {
 								val cacheUpdateStarted = SystemClock.elapsedRealtime()
 								val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
 								Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
-								vm.setLiveData(cachedResult.dataset, selectedDate)
+								vm.setLiveDataOffMain(cachedResult.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Updated
 								Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 								saveChartCache()
@@ -457,7 +457,7 @@ fun AppRoot(vm: HomeViewModel) {
 									synchronizeCalendar(updated)
 								}
 							} else {
-								vm.setLiveData(result.dataset, selectedDate)
+								vm.setLiveDataOffMain(result.dataset, selectedDate)
 								homeDataStatus = PageDataStatus.Historical
 								Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 							}
@@ -612,7 +612,7 @@ fun AppRoot(vm: HomeViewModel) {
 								val cacheUpdateStarted = SystemClock.elapsedRealtime()
 								val cachedResult = chartCacheRepo.mergeForDisplay(result.dataset)
 								Log.i("TandemStartupPerf", "chart cache update end elapsedMs=${SystemClock.elapsedRealtime() - cacheUpdateStarted}")
-								vm.setLiveData(cachedResult.dataset, anchorDate)
+								vm.setLiveDataOffMain(cachedResult.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Updated
 								Log.i("TandemStartupPerf", "home status assigned status=Updated elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 								saveChartCache()
@@ -621,7 +621,7 @@ fun AppRoot(vm: HomeViewModel) {
 									synchronizeCalendar(updated)
 								}
 							} else {
-								vm.setLiveData(result.dataset, anchorDate)
+								vm.setLiveDataOffMain(result.dataset, anchorDate)
 								homeDataStatus = PageDataStatus.Historical
 								Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 							}

@@ -1,5 +1,6 @@
 package com.example.tandemapp.data
 
+import com.example.tandemapp.config.AppConfig
 import com.example.tandemapp.model.DayDataset
 import android.os.SystemClock
 import android.util.Log
@@ -40,9 +41,20 @@ class PumpEventsRepository {
 		val datasets = assignments.mapIndexed { index, assignment ->
 			val batchStarted = SystemClock.elapsedRealtime()
 			Log.i("TandemStartupPerf", "assignment batch start elapsedRealtimeMs=$batchStarted index=${index + 1} total=${assignments.size} requests=1 pagination=none")
-			val body = downloadEvents(auth, assignment.id, selectedDate)
+			logMemory("before_download_${index + 1}")
+			val body = downloadEvents(auth, assignment.id, selectedDate, operational = true)
+			Log.i("P0B_MEMORY", "download_complete index=${index + 1} chars=${body.length}")
+			logMemory("before_decode_${index + 1}")
 			val decodeStarted = SystemClock.elapsedRealtime()
 			val dataset = PumpEventsAdapter.decode(body, requestedAssignmentId = assignment.id)
+			logMemory("after_decode_${index + 1}")
+                   val rawChars = body.length.toLong()
+                   Log.i(
+                           "P0C2A_SOURCES",
+                           "index=${index + 1} sources=${dataset.pumpEventsSources.size} " +
+                                   "rawChars=$rawChars cgm=${dataset.cgm.size} " +
+                                   "supplemental=${dataset.supplementalEvents.size}"
+                   )
 			Log.i("TandemStartupPerf", "assignment decode end index=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - decodeStarted} batchElapsedMs=${SystemClock.elapsedRealtime() - batchStarted}")
 			dataset
 		}
@@ -130,11 +142,15 @@ class PumpEventsRepository {
 			?: runCatching { LocalDateTime.parse(raw).toInstant(ZoneOffset.UTC).toEpochMilli() }.getOrNull()
 	}
 
-	private fun downloadEvents(auth: TandemAuthContext, assignmentId: String, selectedDate: LocalDate?): String {
+	private fun downloadEvents(auth: TandemAuthContext, assignmentId: String, selectedDate: LocalDate?, operational: Boolean = false): String {
 		val today = LocalDate.now()
 		val center = selectedDate ?: today
 		val end = minOf(center.plusDays(7), today)
-		val start = end.minusDays(14)
+		val start = end.minusDays(AppConfig.HISTORY_DAYS - 1)
+           Log.i(
+                   "P0C2A_DOWNLOAD",
+                   "operational=$operational selectedDate=$selectedDate start=$start end=$end"
+           )
 		val eventIds = "229,5,28,4,26,99,279,3,9,16,59,21,55,20,280,64,65,66,61,33,371,171,369,460,172,370,461,372,480,399,256,213,406,477,394,212,404,214,405,486,447,313,60,14,6,90,230,140,12,11,53,13,63,203,191,81"
 		val query = linkedMapOf(
 			"pumperId" to auth.pumperId,
@@ -203,6 +219,18 @@ class PumpEventsRepository {
 		)
 	}
 
+private fun logMemory(stage: String) {
+val runtime = Runtime.getRuntime()
+val used = runtime.totalMemory() - runtime.freeMemory()
+val committed = runtime.totalMemory()
+val maximum = runtime.maxMemory()
+Log.i(
+"P0B_MEMORY",
+"stage=$stage usedMiB=${used / 1048576L} " +
+"committedMiB=${committed / 1048576L} " +
+"maxMiB=${maximum / 1048576L}"
+)
+}
 	private fun encode(value: String): String =
 		URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 

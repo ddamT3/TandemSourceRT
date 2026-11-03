@@ -1,4 +1,4 @@
-﻿import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 
 plugins {
 	id("com.android.application")
@@ -40,6 +40,12 @@ android {
 		}
 	}
 
+buildTypes {
+getByName("debug") {
+applicationIdSuffix = ".dev"
+
+}
+}
 	buildFeatures {
 		compose = true
 		buildConfig = true

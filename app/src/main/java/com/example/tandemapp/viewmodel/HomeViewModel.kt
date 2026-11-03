@@ -1,4 +1,8 @@
 package com.example.tandemapp.viewmodel
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 import android.os.SystemClock
 import android.util.Log
@@ -75,7 +79,74 @@ class HomeViewModel : ViewModel() {
 		)
 	}
 
-	fun setLiveData(data: DayDataset, anchorDate: LocalDate = LocalDate.now()) {
+	    private val dashboardProcessingMutex = Mutex()
+
+    /**
+     * P0-A: CPU-intensive dashboard preparation runs on Default.
+     * Compose state publication remains on the caller's Main dispatcher.
+     * Requests are serialized to preserve their publication order.
+     */
+    suspend fun setLiveDataOffMain(
+        data: DayDataset,
+        anchorDate: LocalDate = LocalDate.now()
+    ) {
+        dashboardProcessingMutex.withLock {
+            val processingStarted = SystemClock.elapsedRealtime()
+            Log.i(
+                "TandemStartupPerf",
+                "dashboard processing start elapsedRealtimeMs=$processingStarted"
+            )
+
+            val prepared = withContext(Dispatchers.Default) {
+                val timeline = CgmTimelineResolver.resolve(data)
+
+                Log.i(
+                    "TandemStartupPerf",
+                    "dashboard cgm resolve end elapsedMs=${SystemClock.elapsedRealtime() - processingStarted}"
+                )
+
+                val availableDates = timeline.points
+                    .map { it.point }
+                    .mapNotNull {
+                        runCatching {
+                            LocalDate.parse(it.time.substring(0, 10))
+                        }.getOrNull()
+                    }
+                    .distinct()
+                    .sorted()
+
+                val events = timeline.dashboardEvents(data.deviceStates)
+                val modes = buildUserModeTimeline(data)
+
+                Triple(timeline, availableDates, Pair(events, modes))
+            }
+
+            val center = anchorDate
+                .atTime(12, 0)
+                .atOffset(ZoneOffset.UTC)
+
+            val halfWindowSeconds =
+                state.value.selectedWindowHours * 3600L / 2
+
+            state.value = state.value.copy(
+                selected = anchorDate,
+                anchorDate = anchorDate,
+                available = prepared.second,
+                dataset = data,
+                cgmTimeline = prepared.first,
+                dashboardEvents = prepared.third.first,
+                userModeSegments = prepared.third.second,
+                visibleWindowStart = center.minusSeconds(halfWindowSeconds),
+                visibleWindowEnd = center.plusSeconds(halfWindowSeconds)
+            )
+
+            Log.i(
+                "TandemStartupPerf",
+                "dashboard state published elapsedRealtimeMs=${SystemClock.elapsedRealtime()} elapsedMs=${SystemClock.elapsedRealtime() - processingStarted}"
+            )
+        }
+    }
+fun setLiveData(data: DayDataset, anchorDate: LocalDate = LocalDate.now()) {
 		val processingStarted = SystemClock.elapsedRealtime()
 		Log.i("TandemStartupPerf", "dashboard processing start elapsedRealtimeMs=$processingStarted")
 		val cgmTimeline = CgmTimelineResolver.resolve(data)
