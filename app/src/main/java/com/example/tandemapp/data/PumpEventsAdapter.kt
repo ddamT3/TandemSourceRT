@@ -57,7 +57,7 @@ object PumpEventsAdapter {
 
 	fun decode(payload: String, requestedAssignmentId: String? = null): DayDataset {
 		val rawPayload = json.parseToJsonElement(payload).jsonObject
-		return decode(json.decodeFromJsonElement<PumpEventsPayloadDto>(rawPayload), requestedAssignmentId, rawPayload)
+		return decodeRaw(rawPayload, requestedAssignmentId)
 	}
 
 	/**
@@ -73,7 +73,7 @@ object PumpEventsAdapter {
 			}
 			root as? JsonObject ?: throw IllegalArgumentException("Pump-event response must be an object")
 		}
-		return decode(json.decodeFromJsonElement<PumpEventsPayloadDto>(raw), requestedAssignmentId, raw)
+		return decodeRaw(raw, requestedAssignmentId)
 	}
 
 	private fun readJsonValue(reader: JsonReader): JsonElement = when (reader.peek()) {
@@ -99,14 +99,32 @@ object PumpEventsAdapter {
 	}
 
 	fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String? = null): DayDataset =
-		decode(payload, requestedAssignmentId, json.encodeToJsonElement(payload).jsonObject)
+		decodeIndexed(payload.events.mapIndexed { index, event -> IndexedValue(index, event) },
+			requestedAssignmentId, json.encodeToJsonElement(payload).jsonObject)
 
-	private fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String?, rawPayload: JsonObject): DayDataset {
-		// Keep the existing display ordering while retaining each original response position.
-		val indexedEvents = payload.events.withIndex().sortedWith(
+	private fun decodeRaw(rawPayload: JsonObject, requestedAssignmentId: String?): DayDataset {
+		// Decode directly into the indexed working list: no additional payload DTO
+		// or second complete list of decoded events.
+		val indexedEvents = rawPayload["events"]?.jsonArray?.mapIndexed { index, element ->
+			IndexedValue(index, json.decodeFromJsonElement<PumpEventDto>(element))
+		}.orEmpty()
+		return decodeIndexed(indexedEvents, requestedAssignmentId, rawPayload)
+	}
+
+	private fun decodeIndexed(
+		originalEvents: List<IndexedValue<PumpEventDto>>,
+		requestedAssignmentId: String?,
+		rawPayload: JsonObject
+	): DayDataset {
+		// Preserve original eventIndex while retaining existing display ordering.
+		val indexedEvents = originalEvents.sortedWith(
 			compareBy({ time(it.value).orEmpty() }, { it.value.sequenceGroup ?: 0 }, { it.value.sequenceNumber ?: 0 })
 		)
-		val events = indexedEvents.map { it.value }
+		// A view avoids another full list of references to all decoded events.
+		val events = object : AbstractList<PumpEventDto>() {
+			override val size: Int get() = indexedEvents.size
+			override fun get(index: Int): PumpEventDto = indexedEvents[index].value
+		}
 		val (bolus, carbs) = extractBolus(events)
 		return DayDataset(
 			cgm = extractCgm(indexedEvents), bolus = bolus, carbs = carbs,
