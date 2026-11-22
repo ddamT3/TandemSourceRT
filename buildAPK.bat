@@ -29,7 +29,7 @@ if not exist "%APK%" (
     exit /b 1
 )
 
-for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$t=[IO.File]::ReadAllText('app/build.gradle.kts'); $m=[regex]::Match($t,'val release_versionName\s*=\s*\"([0-9]{2}\.[0-9]{2}\.[0-9]{3})\"'); if(-not $m.Success){exit 1}; $m.Groups[1].Value"`) do set "VERSION=%%V"
+for /f "tokens=4" %%V in ('findstr /C:"val release_versionName" "app\build.gradle.kts"') do set "VERSION=%%~V"
 if not defined VERSION (echo ERROR: versione non trovata & popd & exit /b 1)
 set "RELEASE=app\build\outputs\apk\debug\TandemSourceRT-v%VERSION%.apk"
 copy /Y "%APK%" "%RELEASE%" >nul
