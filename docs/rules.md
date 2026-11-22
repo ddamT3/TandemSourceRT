@@ -58,6 +58,33 @@
 - Non installare automaticamente il debug sui dispositivi.
 
 ### Versionamento, build e distribuzione Android
+
+<!-- TANDEM_VERSION_POLICY_V1_START -->
+## Versionamento applicativo
+
+- Formato obbligatorio: `YY.MM.NNN`.
+- `YY`: ultime due cifre dell'anno.
+- `MM`: mese da `01` a `12`.
+- `NNN`: progressivo mensile da `001` a `999`.
+- Al cambio del mese il progressivo riparte da `001`.
+- Esempi: `26.11.001`, `26.11.002`, `26.12.001`.
+
+### Fonte canonica
+- Unica fonte: `release_versionName` in `app/build.gradle.kts`.
+- Gradle calcola `versionCode` Android dalla versione canonica.
+- Runtime, packaging e distribuzione devono usare la stessa versione.
+- L'eventuale versione dello schema database resta indipendente.
+
+### Incremento e rilascio
+- Il bump e' esplicito, una sola volta per nuovo rollout.
+- Un retry dello stesso rollout non incrementa la versione.
+- Build, avvio, login, commit e push non incrementano la versione.
+- `buildAPK.bat` non esegue bump, commit, push o deploy.
+- Bump, commit, push e deploy richiedono autorizzazione esplicita.
+- Prima della delivery verificare la versione effettiva dell'APK.
+- Sequenza: bump autorizzato, test, build, verifica APK,
+  commit/push autorizzati, delivery autorizzata.
+<!-- TANDEM_VERSION_POLICY_V1_END -->
 - Non installare APK né modificare release senza richiesta esplicita.
 - Per modifiche al codice Android, eseguire la build debug offline `./gradlew.bat :app:assembleDebug --offline` e i test pertinenti quando disponibili; non interpretare una build come prova di assenza di OOM.
 - Verificare provenienza CGM, metadati originali, cache e compatibilità sul dispositivo.
