@@ -1,45 +1,8 @@
-# Project Rules
+# RULES — TandemSourceRT
 
-## Regola obbligatoria: script PowerShell autoconsistenti
+> Due sezioni: (1) regole specifiche TandemSourceRT, (2) regole generali valide per tutti i progetti. Fonte specifica: precedente `docs/rules.md` del branch `work/v02.01.008`. Fonte generale: `WorkApp3/docs/RULES.md`. Nessuna modifica ai dati applicativi.
 
-Quando viene richiesto uno script PowerShell per modificare, verificare o
-gestire il progetto, fornire sempre uno script completo, autoconsistente
-e direttamente eseguibile.
-
-Requisiti obbligatori:
-
-1. Ogni script deve poter essere copiato ed eseguito integralmente in
-   una nuova sessione PowerShell, senza dipendere da variabili o comandi
-   eseguiti in precedenza.
-2. Non fornire patch parziali, frammenti da sostituire manualmente,
-   istruzioni del tipo "modifica questa parte dello script precedente"
-   o modifiche manuali a file sorgente.
-3. In caso di errore in uno script precedente, fornire sempre una nuova
-   versione completa e corretta dello script.
-4. Definire esplicitamente percorsi, variabili, controlli preliminari
-   e prerequisiti necessari.
-5. Prima di modificare un file, verificare che la struttura attesa
-   corrisponda a quella effettivamente presente.
-6. Creare un backup dei file modificati prima della scrittura.
-7. In caso di errore durante le modifiche o le verifiche, ripristinare
-   i file modificati quando tecnicamente possibile.
-8. Non eseguire installazioni, commit, push o modifiche alla release APK
-   senza richiesta esplicita.
-9. Per le modifiche al codice Android, eseguire la compilazione debug
-   offline e i test pertinenti, quando disponibili.
-10. Riportare chiaramente esito, file modificati, percorso dei backup
-    ed eventuali errori.
-11. Evitare modifiche non richieste e preservare le modifiche locali
-    preesistenti.
-12. Se uno script e' soltanto diagnostico, non modificare alcun file
-    del progetto.
-
-Questa regola si applica anche agli script forniti per correggere
-errori introdotti da script precedenti.
-
-<!-- TANDEMSOURCERT_RULES_V1 -->
-
-## Regole operative specifiche TandemSourceRT
+## 1. Regole specifiche del progetto TandemSourceRT
 
 ### Priorita' vincolanti
 
@@ -83,34 +46,6 @@ errori introdotti da script precedenti.
 - Non usare System.gc() o Thread.sleep() come soluzione agli OOM.
 - Versionare o invalidare esplicitamente formati cache incompatibili.
 
-### Script PowerShell autoconsistenti
-
-1. Fornire sempre script completi, autonomi e pronti per un unico
-   copia-incolla.
-2. Non dipendere da variabili o comandi precedenti.
-3. Non fornire patch parziali o frammenti da sostituire manualmente.
-4. Se uno script fallisce, fornire una nuova versione completa.
-5. Verificare file, percorsi e precondizioni prima delle modifiche.
-6. Creare backup e prevedere rollback.
-7. Preservare encoding, BOM, newline e indentazione.
-8. Evitare dipendenze fragili da indentazione esatta.
-9. Preferire operazioni idempotenti.
-10. Verificare realmente exit code e risultati.
-11. Non dichiarare PASS dopo un comando fallito.
-12. Non modificare file non correlati al task.
-13. Non eseguire automaticamente operazioni Git.
-14. Non installare APK o modificare release senza autorizzazione.
-
-### Modalita' di sviluppo
-
-- Un solo obiettivo funzionale per intervento.
-- Preferire modifiche limitate a uno o due file.
-- Identificare dipendenze e test pertinenti prima di modificare.
-- Non eseguire refactoring o riformattazioni non richieste.
-- Non ampliare autonomamente il perimetro.
-- Preferire PowerShell per modifiche semplici.
-- Usare Codex o Work soltanto quando giustificato dalla complessita'.
-
 ### Test e verifiche
 
 - Compilare normalmente con:
@@ -122,49 +57,64 @@ errori introdotti da script precedenti.
   metadati originali.
 - Non installare automaticamente il debug sui dispositivi.
 
-### Git e identita'
+### Versionamento, build e distribuzione Android
+- Non installare APK né modificare release senza richiesta esplicita.
+- Per modifiche al codice Android, eseguire la build debug offline `./gradlew.bat :app:assembleDebug --offline` e i test pertinenti quando disponibili; non interpretare una build come prova di assenza di OOM.
+- Verificare provenienza CGM, metadati originali, cache e compatibilità sul dispositivo.
+- Non cancellare dati dell'app, cache operative o credenziali durante la diagnostica senza autorizzazione.
 
-- Tutte le operazioni Git sono eseguite dall'utente tramite PowerShell.
-- Nessun commit, push, reset, merge o altra operazione Git automatica.
-- Non modificare la configurazione Git globale.
-- Per commit autorizzati, usare esclusivamente l'identita' locale:
-  user.name = ddamT3
-  user.email = ddamT3@users.noreply.github.com
-- Verificare l'identita' prima di ogni commit autorizzato.
+### Identità e percorsi TandemSourceRT
+- Repository: `ddamT3/TandemSourceRT`; verificare sempre branch e remote effettivi.
+- Per commit autorizzati verificare l'identità Git locale `ddamT3 <ddamT3@users.noreply.github.com>`, senza modificare la configurazione globale.
+- Negli script usare `TANDEMSOURCERT_ROOT` oppure una root verificata; costruire i percorsi con `Join-Path`.
+- Preferire PowerShell per modifiche semplici; Codex o Work soltanto quando la complessità lo giustifica.
 
-### Percorsi portabili
+## 2. Regole generali — valide per tutti i progetti
 
-- Non introdurre percorsi assoluti specifici del PC nei sorgenti.
-- Preferire percorsi relativi alla root del repository.
-- Negli script usare TANDEMSOURCERT_ROOT o una root verificata.
-- Costruire i percorsi tramite Join-Path o API equivalenti.
-- Non introdurre dipendenze implicite dalla directory corrente.
+Queste regole sono derivate dai principi generali di `WorkApp3/docs/RULES.md` e si applicano a ogni progetto; le regole specifiche della sezione 1 aggiungono vincoli, senza autorizzare deroghe implicite.
 
-### Consegna
+### 2.1 Ambito e priorità
+1. Operare solo sul compito richiesto. Priorità: integrità dei dati, recuperabilità, correttezza funzionale, usabilità; privacy e sicurezza rimangono vincoli obbligatori.
+2. Prima di intervenire verificare requisiti, file, dipendenze, rischi, stato del repository e criterio di accettazione.
+3. Preferire incrementi piccoli, normalmente 1–2 file, reversibili e verificabili. Evitare refactoring, formattazioni, dipendenze o modifiche collaterali.
+4. In caso di conflitto, ambiguità sostanziale o rischio di perdita dati, fermarsi e descrivere il blocco.
 
-- Riportare file modificati, verifiche eseguite e relativi esiti.
-- Non dichiarare completate operazioni non eseguite.
-- Fornire sempre gli script completi nella conversazione.
-- Segnalare errori, rollback e problemi residui.
+### 2.2 Filesystem pulito, input e artefatti
+1. Non sporcare HDD/SSD: preferire analisi in memoria e output in console; non creare log, backup, report, script o directory temporanee senza necessità documentata.
+2. Per modifiche reversibili a documenti versionati, verificare lo stato Git e usare il recupero dalla versione precedente quando sufficiente. Per dati non ricostruibili o modifiche rischiose, prevedere backup/rollback proporzionati e autorizzati.
+3. Non cancellare, spostare o sovrascrivere dati, backup, input e configurazioni non correlati. Verificare sempre destinazioni e precondizioni prima della scrittura.
+4. Separare input e output; usare dati sintetici o autorizzati per test; non produrre artefatti persistenti se non indispensabili.
+5. Non inserire nei sorgenti percorsi assoluti del PC; preferire root verificata, percorsi relativi o variabili d'ambiente documentate.
+6. Preservare encoding, BOM, newline, indentazione e convenzioni locali.
 
-<!-- END_TANDEMSOURCERT_RULES_V1 -->
+### 2.3 PowerShell e strumenti
+1. Per Windows fornire script PowerShell 5.1 **completi e autoconsistenti**, copiabili in una nuova sessione senza variabili precedenti; nessuna patch parziale o modifica manuale a script precedenti.
+2. Preferire blocchi inline `& { ... }`; non creare file `.ps1` salvo richiesta esplicita.
+3. Tenere insieme `if/elseif/else`, `try/catch/finally`, `switch` e cicli; verificare sintassi, quoting, prerequisiti, exit code e risultati.
+4. Se uno script fallisce, fornire la versione completa corretta; non dichiarare PASS per un comando fallito.
+5. Prima di modificare più file, verificare tutti gli ancoraggi; usare scritture sicure e rollback quando necessari.
+6. Non installare o aggiornare strumenti e dipendenze implicitamente. Usare assistenti aggiuntivi solo se giustificato e nei limiti autorizzati.
 
-<!-- POWERSHELL_COMPOUND_BLOCKS_V1 -->
+### 2.4 Privacy e rete
+1. Non trasferire dati riservati, personali, sanitari, token o credenziali a servizi esterni, agenti, log o commit senza autorizzazione specifica.
+2. Limitare rete e dipendenze ai servizi già previsti; non introdurre telemetria o endpoint nuovi implicitamente.
+3. Non esporre payload completi o percorsi personali nei report pubblicabili.
 
-### PowerShell: blocchi condizionali e strutture composte
+### 2.5 Test e risultati
+1. Eseguire test mirati al delta, con timeout finiti; la regressione completa richiede richiesta o motivazione esplicita.
+2. Distinguere `PASS`, `FAIL`, `SKIP` e `NON ESEGUITO`; non inventare risultati né trattare un controllo statico come prova completa.
+3. Conservare le evidenze precedenti e indicare ambiente, limiti e rischi residui. Non modificare input operativi nei test senza autorizzazione.
 
-- Consegnare sempre l'intera struttura `if` / `elseif` / `else`
-  nello stesso script autoconsistente.
-- Non separare mai `else` dal relativo `if` in blocchi da
-  copiare o eseguire distintamente.
-- Applicare la stessa regola a `try` / `catch` / `finally`,
-  `switch`, cicli e blocchi annidati.
-- Non chiedere all'utente di completare manualmente una
-  struttura PowerShell iniziata in un messaggio precedente.
-- Racchiudere preferibilmente gli script in un unico blocco
-  `& { ... }`, completo di tutte le parentesi di apertura
-  e chiusura.
-- Prima della consegna, verificare che tutte le strutture
-  composte siano sintatticamente complete.
-- Non fornire mai un ramo `else`, `catch` o `finally`
-  come comando autonomo.
+### 2.6 Git e pubblicazione
+1. Verificare repository, branch, HEAD, remote, working tree, staging e identità locale prima di operazioni Git.
+2. Nessun commit, push, reset, merge, rebase, stash, force push, rilascio o deploy implicito; richiedono autorizzazione esplicita. Le operazioni Git locali sono eseguite dall'utente via PowerShell, secondo la politica del progetto.
+3. Non presumere sincronizzazione tra copia locale e GitHub; preservare modifiche locali e staged non correlate.
+4. Prima di pubblicare, controllare file e contenuti inclusi; non pubblicare segreti, cache o artefatti. Verificare lo SHA remoto dopo un'eventuale pubblicazione.
+5. Tenere distinti modifica, test, commit, push, build, installazione e distribuzione.
+
+### 2.7 Documentazione e tracciabilità
+1. Redigere documenti e report in italiano, conservando invariati identificatori, API, codice e stringhe tecniche.
+2. Aggiornare documenti tematici esistenti; evitare file ridondanti per singoli task.
+3. Distinguere `PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `VERIFIED` e gli stati di pubblicazione/distribuzione.
+4. Non presentare come attuale un audit storico; riportare data, ambiente, limiti e verifiche effettive.
+5. SNAPSHOT, checkpoint e procedure di release solo se esplicitamente richiesti, preservando la tracciabilità delle modifiche.
