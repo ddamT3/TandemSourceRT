@@ -10,6 +10,10 @@ import com.example.tandemapp.model.DeviceStateEvent
 import com.example.tandemapp.model.IobPoint
 import com.example.tandemapp.model.PumpEventsSource
 import com.example.tandemapp.model.SupplementalPumpEvent
+import java.io.InputStream
+import java.io.InputStreamReader
+import android.util.JsonReader
+import android.util.JsonToken
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.serialization.Serializable
@@ -17,6 +21,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -53,6 +58,44 @@ object PumpEventsAdapter {
 	fun decode(payload: String, requestedAssignmentId: String? = null): DayDataset {
 		val rawPayload = json.parseToJsonElement(payload).jsonObject
 		return decode(json.decodeFromJsonElement<PumpEventsPayloadDto>(rawPayload), requestedAssignmentId, rawPayload)
+	}
+
+	/**
+	 * Parse the HTTP response incrementally, without allocating a full JSON String.
+	 * The original JSON tree is retained because CGM source metadata and raw exports
+	 * require lossless event positions and unknown event properties.
+	 */
+	fun decodeStream(stream: InputStream, requestedAssignmentId: String? = null): DayDataset {
+		val raw = JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+			val root = readJsonValue(reader)
+			if (reader.peek() != JsonToken.END_DOCUMENT) {
+				throw IllegalArgumentException("Unexpected trailing pump-event JSON")
+			}
+			root as? JsonObject ?: throw IllegalArgumentException("Pump-event response must be an object")
+		}
+		return decode(json.decodeFromJsonElement<PumpEventsPayloadDto>(raw), requestedAssignmentId, raw)
+	}
+
+	private fun readJsonValue(reader: JsonReader): JsonElement = when (reader.peek()) {
+		JsonToken.BEGIN_OBJECT -> {
+			reader.beginObject()
+			val values = linkedMapOf<String, JsonElement>()
+			while (reader.hasNext()) values[reader.nextName()] = readJsonValue(reader)
+			reader.endObject()
+			JsonObject(values)
+		}
+		JsonToken.BEGIN_ARRAY -> {
+			reader.beginArray()
+			val values = mutableListOf<JsonElement>()
+			while (reader.hasNext()) values += readJsonValue(reader)
+			reader.endArray()
+			JsonArray(values)
+		}
+		JsonToken.STRING -> JsonPrimitive(reader.nextString())
+		JsonToken.NUMBER -> json.parseToJsonElement(reader.nextString())
+		JsonToken.BOOLEAN -> JsonPrimitive(reader.nextBoolean())
+		JsonToken.NULL -> { reader.nextNull(); JsonNull }
+		else -> throw IllegalArgumentException("Unexpected JSON token: ${reader.peek()}")
 	}
 
 	fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String? = null): DayDataset =
