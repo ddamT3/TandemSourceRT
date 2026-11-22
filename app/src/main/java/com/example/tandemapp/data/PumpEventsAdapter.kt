@@ -99,27 +99,29 @@ object PumpEventsAdapter {
 	}
 
 	fun decode(payload: PumpEventsPayloadDto, requestedAssignmentId: String? = null): DayDataset =
-		decodeIndexed(payload.events.mapIndexed { index, event -> IndexedValue(index, event) },
+		decodeIndexed(payload.events.mapIndexedTo(ArrayList(payload.events.size)) { index, event -> IndexedValue(index, event) },
 			requestedAssignmentId, json.encodeToJsonElement(payload).jsonObject)
 
 	private fun decodeRaw(rawPayload: JsonObject, requestedAssignmentId: String?): DayDataset {
 		// Decode directly into the indexed working list: no additional payload DTO
 		// or second complete list of decoded events.
-		val indexedEvents = rawPayload["events"]?.jsonArray?.mapIndexed { index, element ->
+		val rawEvents = rawPayload["events"]?.jsonArray
+		val indexedEvents = rawEvents?.mapIndexedTo(ArrayList(rawEvents.size)) { index, element ->
 			IndexedValue(index, json.decodeFromJsonElement<PumpEventDto>(element))
-		}.orEmpty()
+		} ?: arrayListOf()
 		return decodeIndexed(indexedEvents, requestedAssignmentId, rawPayload)
 	}
 
 	private fun decodeIndexed(
-		originalEvents: List<IndexedValue<PumpEventDto>>,
+		originalEvents: MutableList<IndexedValue<PumpEventDto>>,
 		requestedAssignmentId: String?,
 		rawPayload: JsonObject
 	): DayDataset {
 		// Preserve original eventIndex while retaining existing display ordering.
-		val indexedEvents = originalEvents.sortedWith(
+		originalEvents.sortWith(
 			compareBy({ time(it.value).orEmpty() }, { it.value.sequenceGroup ?: 0 }, { it.value.sequenceNumber ?: 0 })
 		)
+		val indexedEvents = originalEvents
 		// A view avoids another full list of references to all decoded events.
 		val events = object : AbstractList<PumpEventDto>() {
 			override val size: Int get() = indexedEvents.size
