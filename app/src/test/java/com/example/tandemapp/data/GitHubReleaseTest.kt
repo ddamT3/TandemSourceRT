@@ -12,7 +12,7 @@ import org.junit.Test
 class GitHubReleaseTest {
 	private val checksum = "ab".repeat(32)
 	private fun payload(
-		tag: String = "v02.01.008", draft: Boolean = false, prerelease: Boolean = false,
+		tag: String = "v26.11.002", draft: Boolean = false, prerelease: Boolean = false,
 		url: String? = null, state: String = "uploaded", size: Long = 23_000_000,
 		digest: JsonElement? = JsonPrimitive("sha256:$checksum"), duplicate: Boolean = false, includeApk: Boolean = true
 	): String {
@@ -32,19 +32,20 @@ class GitHubReleaseTest {
 		}.toString()
 	}
 
-	@Test
-	fun `versions use the Android numeric mapping and never lexical comparison`() {
-		assertEquals(201008L, UpdateVersion.parse("v02.01.008").versionCode)
-		assertEquals(201008L, UpdateVersion.parse("2.1.8").versionCode)
-		assertTrue(UpdateVersion.parse("v02.01.010").versionCode > UpdateVersion.parse("v02.01.009").versionCode)
-		assertTrue(UpdateVersion.parse("v02.02.000").versionCode > UpdateVersion.parse("v02.01.999").versionCode)
-		assertTrue(UpdateVersion.parse("v03.00.000").versionCode > UpdateVersion.parse("v02.99.999").versionCode)
-		assertFalse(UpdateVersion.parse("v02.01.007").versionCode > 201007L)
-	}
+    @Test
+    fun `versions use the Android numeric mapping and never lexical comparison`() {
+        assertEquals(2611002L, UpdateVersion.parse("v26.11.002").versionCode)
+        assertEquals(2611002L, UpdateVersion.parse("26.11.002").versionCode)
+        assertTrue(UpdateVersion.parse("v26.11.004").versionCode > UpdateVersion.parse("v26.11.003").versionCode)
+        assertTrue(UpdateVersion.parse("v26.12.001").versionCode > UpdateVersion.parse("v26.11.999").versionCode)
+        assertTrue(UpdateVersion.parse("v27.01.001").versionCode > UpdateVersion.parse("v26.12.999").versionCode)
+        assertFalse(UpdateVersion.parse("v26.11.001").versionCode > 2611001L)
+        assertThrows(RuntimeException::class.java) { UpdateVersion.parse("2.1.8") }
+    }
 
 	@Test
 	fun `malformed unsupported and overflowing versions are rejected`() {
-		listOf("v02.01", "v02.01.1000", "v02.100.001", "v02.01.008-rc1", "v21474.99.999", "../v02.01.008", "v00.00.000").forEach {
+		listOf("v02.01", "v26.11.1000", "v26.13.001", "v26.11.002-rc1", "v21474.99.999", "../v26.11.002", "v26.00.000").forEach {
 			assertThrows(RuntimeException::class.java) { UpdateVersion.parse(it) }
 		}
 	}
@@ -52,24 +53,24 @@ class GitHubReleaseTest {
 	@Test
 	fun `stable release selects the exact official APK and preserves notes and checksum`() {
 		val release = requireNotNull(GitHubReleaseParser.parse(payload()))
-		assertEquals("v02.01.008", release.version.tag)
+		assertEquals("v26.11.002", release.version.tag)
 		assertEquals("Release notes", release.notes)
-		assertEquals("TandemSourceRT-v02.01.008.apk", release.apkName)
-		assertEquals("https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.008/TandemSourceRT-v02.01.008.apk", release.apkUrl)
+		assertEquals("TandemSourceRT-v26.11.002.apk", release.apkName)
+		assertEquals("https://github.com/ddamT3/TandemSourceRT/releases/download/v26.11.002/TandemSourceRT-v26.11.002.apk", release.apkUrl)
 		assertEquals(23_000_000L, release.apkSize)
 		assertEquals(checksum, release.sha256)
 	}
 
 	@Test
 	fun `official published filename follows buildAPK versioned asset convention`() {
-		val release = requireNotNull(GitHubReleaseParser.parse(payload(tag = "v02.01.007")))
-		assertEquals("TandemSourceRT-v02.01.007.apk", release.apkName)
-		assertEquals("https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.007/TandemSourceRT-v02.01.007.apk", release.apkUrl)
+		val release = requireNotNull(GitHubReleaseParser.parse(payload(tag = "v26.11.001")))
+		assertEquals("TandemSourceRT-v26.11.001.apk", release.apkName)
+		assertEquals("https://github.com/ddamT3/TandemSourceRT/releases/download/v26.11.001/TandemSourceRT-v26.11.001.apk", release.apkUrl)
 		assertThrows(RuntimeException::class.java) {
-			GitHubReleaseParser.parse(payload().replace("TandemSourceRT-v02.01.008.apk", "TandemSourceRT.apk"))
+			GitHubReleaseParser.parse(payload().replace("TandemSourceRT-v26.11.002.apk", "TandemSourceRT.apk"))
 		}
 		assertThrows(RuntimeException::class.java) {
-			GitHubReleaseParser.parse(payload(url = "https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.007/TandemSourceRT-v02.01.008.apk"))
+			GitHubReleaseParser.parse(payload(url = "https://github.com/ddamT3/TandemSourceRT/releases/download/v26.11.001/TandemSourceRT-v26.11.002.apk"))
 		}
 	}
 
@@ -92,10 +93,10 @@ class GitHubReleaseTest {
 	@Test
 	fun `foreign APK URLs query strings and alternate repositories cannot be downloaded`() {
 		listOf(
-			"https://example.com/TandemSourceRT-v02.01.008.apk",
-			"http://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.008/TandemSourceRT-v02.01.008.apk",
-			"https://github.com/other/TandemSourceRT/releases/download/v02.01.008/TandemSourceRT-v02.01.008.apk",
-			"https://github.com/ddamT3/TandemSourceRT/releases/download/v02.01.008/TandemSourceRT-v02.01.008.apk?redirect=elsewhere"
+			"https://example.com/TandemSourceRT-v26.11.002.apk",
+			"http://github.com/ddamT3/TandemSourceRT/releases/download/v26.11.002/TandemSourceRT-v26.11.002.apk",
+			"https://github.com/other/TandemSourceRT/releases/download/v26.11.002/TandemSourceRT-v26.11.002.apk",
+			"https://github.com/ddamT3/TandemSourceRT/releases/download/v26.11.002/TandemSourceRT-v26.11.002.apk?redirect=elsewhere"
 		).forEach { url -> assertThrows(RuntimeException::class.java) { GitHubReleaseParser.parse(payload(url = url)) } }
 	}
 

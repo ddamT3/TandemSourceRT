@@ -82,8 +82,9 @@ class AppUpdateRepository(private val context: Context) {
 		val pm = context.packageManager
 		val apk = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
 			?: error("Android cannot verify APK metadata or signing certificates. Installation blocked.")
-		require(context.packageName == PACKAGE && apk.packageName == PACKAGE) { "APK package is not $PACKAGE. Installation blocked." }
-		val installed = pm.getPackageInfo(PACKAGE, PackageManager.GET_SIGNING_CERTIFICATES)
+		require(context.packageName == PACKAGE || context.packageName == "$PACKAGE.dev") { "Unsupported installed package. Installation blocked." }
+		require(apk.packageName == context.packageName) { "APK package differs from installed app. Installation blocked." }
+		val installed = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
 		require(apk.longVersionCode > installed.longVersionCode) { "APK versionCode is not newer than the installed app" }
 		require(apk.longVersionCode == release.version.versionCode) { "APK versionCode does not match the GitHub release tag" }
 		val installedSigners = signers(installed)

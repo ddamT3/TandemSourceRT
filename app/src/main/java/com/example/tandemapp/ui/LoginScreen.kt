@@ -29,11 +29,12 @@ import com.example.tandemapp.st.BuildConfig
 import java.util.Locale
 
 @Composable
-fun LoginScreen(
+internal fun LoginScreen(
 	modifier: Modifier = Modifier,
 	email: String,
 	password: String,
 	rememberMe: Boolean,
+	updateModel: AppUpdateViewModel,
 	errorMessage: String? = null,
 	messageIsSuccess: Boolean = false,
 	onEmailChange: (String) -> Unit,
@@ -129,17 +130,12 @@ fun LoginScreen(
 						fontWeight = FontWeight.SemiBold
 					)
 					Text(
-						text = String.format(
-							Locale.US,
-							"v%s.%03d",
-							BuildConfig.VERSION_NAME,
-							BuildConfig.VERSION_CODE % 1000
-						),
+						text = "v${BuildConfig.VERSION_NAME}",
 						style = MaterialTheme.typography.bodyLarge,
 						fontWeight = FontWeight.Medium
 					)
 				}
-				AppUpdateControls(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
+				AppUpdateControls(updateModel, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
 			}
 		}
 	}

@@ -6,23 +6,21 @@ plugins {
 	kotlin("plugin.serialization") version "1.9.24"
 }
 
-// Versione release letta da buildAPK.bat. I nomi delle due variabili sono
-// intenzionalmente compatibili con le espressioni regolari dello script.
-val release_versionName = "02.01"
-val release_versionCode = 8
+// Versione canonica: YY.MM.NNN. Incremento esclusivamente esplicito.
+val release_versionName = "26.11.002"
 
-val releaseVersionParts = release_versionName.split(".")
-require(releaseVersionParts.size == 2) { "versionName deve usare il formato MM.mm" }
-
-val releaseMajor = releaseVersionParts[0].toInt()
-val releaseMinor = releaseVersionParts[1].toInt()
-require(releaseMajor in 0..21474) { "Major version fuori intervallo" }
-require(releaseMinor in 0..99) { "Minor version fuori intervallo 00..99" }
-require(release_versionCode in 0..999) { "Revisione fuori intervallo 000..999" }
+require(Regex("""\d{2}\.(0[1-9]|1[0-2])\.\d{3}""").matches(release_versionName)) {
+    "Formato richiesto: YY.MM.NNN"
+}
+val versionParts = release_versionName.split(".")
+val releaseYear = versionParts[0].toInt()
+val releaseMonth = versionParts[1].toInt()
+val releaseRevision = versionParts[2].toInt()
+require(releaseRevision in 1..999) { "Progressivo richiesto: 001..999" }
 
 val androidVersionCode =
-	releaseMajor * 100_000 + releaseMinor * 1_000 + release_versionCode
-require(androidVersionCode > 0) { "Android versionCode deve essere positivo" }
+    releaseYear * 100_000 + releaseMonth * 1_000 + releaseRevision
+require(androidVersionCode > 0) { "Android versionCode non valido" }
 
 android {
 	namespace = "com.example.tandemapp.st"

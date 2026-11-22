@@ -29,12 +29,7 @@ fun PlaceholderScreen(
 		Card {
 			Column(modifier = Modifier.padding(24.dp)) {
 				Text(
-					text = String.format(
-						Locale.US,
-						"v%s.%03d",
-						BuildConfig.VERSION_NAME,
-						BuildConfig.VERSION_CODE % 1000
-					),
+					text = "v${BuildConfig.VERSION_NAME}",
 					style = MaterialTheme.typography.titleMedium,
 					fontWeight = FontWeight.Medium
 				)

@@ -18,6 +18,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,6 +71,9 @@ import java.time.LocalDate
 @Composable
 fun AppRoot(vm: HomeViewModel) {
 	val context = LocalContext.current
+	val updateModel: AppUpdateViewModel = viewModel()
+	var initialDataLoaded by remember { mutableStateOf(false) }
+	val automaticUpdatePreferenceAtStartup = remember { updateModel.automaticEnabled }
 	var currentScreen by rememberSaveable { mutableStateOf(AppScreen.Login) }
 	var loginError by remember { mutableStateOf<String?>(null) }
 	var calendarExportMessage by remember { mutableStateOf<String?>(null) }
@@ -230,7 +234,7 @@ fun AppRoot(vm: HomeViewModel) {
 				homeDataStatus = PageDataStatus.Cached
 				Log.i("TandemStartupPerf", "home status assigned status=Cached elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 				vm.jumpToLatest()
-				currentScreen = AppScreen.Home
+				if (updateModel.automaticEnabled == automaticUpdatePreferenceAtStartup) currentScreen = AppScreen.Home
 			}
 			try {
 				val today = LocalDate.now()
@@ -255,7 +259,8 @@ fun AppRoot(vm: HomeViewModel) {
 						synchronizeCalendar(it)
 					}
 					vm.jumpToLatest()
-					currentScreen = AppScreen.Home
+					initialDataLoaded = true
+					if (updateModel.automaticEnabled == automaticUpdatePreferenceAtStartup) currentScreen = AppScreen.Home
 				} else {
 					loginError = when (result) {
 						is LiveHistoryResult.AuthenticationFailure -> if (isNetworkAvailable(context)) {
@@ -275,6 +280,10 @@ fun AppRoot(vm: HomeViewModel) {
 				if (cachedChart == null) currentScreen = AppScreen.Login
 			}
 		}
+	}
+
+	LaunchedEffect(initialDataLoaded, updateModel.automaticEnabled) {
+		if (initialDataLoaded && updateModel.automaticEnabled) updateModel.checkAutomatically()
 	}
 
 	Scaffold(
@@ -546,6 +555,7 @@ fun AppRoot(vm: HomeViewModel) {
 
 			AppScreen.Login -> LoginScreen(
 				modifier = Modifier.padding(innerPadding),
+				updateModel = updateModel,
 				email = loginEmail,
 				password = loginPassword,
 				rememberMe = loginRememberMe,
@@ -625,6 +635,7 @@ fun AppRoot(vm: HomeViewModel) {
 								homeDataStatus = PageDataStatus.Historical
 								Log.i("TandemStartupPerf", "home status assigned status=Historical elapsedRealtimeMs=${SystemClock.elapsedRealtime()}")
 							}
+							initialDataLoaded = true
 							currentScreen = AppScreen.Home
 						} else {
 							loginError = when (result) {

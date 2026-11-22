@@ -7,12 +7,14 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,11 +23,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tandemapp.data.AppUpdateRepository
 import com.example.tandemapp.data.GitHubRelease
 import com.example.tandemapp.st.BuildConfig
@@ -73,21 +75,40 @@ internal class UpdateOperationState {
 
 internal class AppUpdateViewModel(application: Application) : AndroidViewModel(application) {
 	private val repository = AppUpdateRepository(application)
+	private val preferences = application.getSharedPreferences("update_prefs", android.content.Context.MODE_PRIVATE)
+	var automaticEnabled by mutableStateOf(preferences.getBoolean("automatic_check", false))
+		private set
+	private var automaticCheckPerformed = false
+
+	fun changeAutomaticEnabled(enabled: Boolean) {
+		automaticEnabled = enabled
+		preferences.edit().putBoolean("automatic_check", enabled).apply()
+	}
+
+	fun checkAutomatically() {
+		if (!automaticEnabled || automaticCheckPerformed || state.busy) return
+		automaticCheckPerformed = true
+		check(silent = true)
+	}
+
+	fun openUpdate() { operations.editIdle { it.copy(showRelease = true) } }
 	private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 	private val operations = UpdateOperationState()
 	private var task: Job? = null
 	val state: UpdateUiState get() = operations.value
 
-	fun check() {
+	fun check(silent: Boolean = false) {
 		if (state.busy) return
 		state.ready?.delete()
-		val operation = operations.begin(UpdateUiState(busy = true, message = "Checking GitHub releases..."))
-		runTask(operation) {
+		val operation = operations.begin(UpdateUiState(busy = true,
+			message = if (silent) null else "Checking GitHub releases..."))
+		runTask(operation, silent = silent) {
 			val release = repository.latest()
 			operations.update(operation) {
 				if (release != null && release.version.versionCode > BuildConfig.VERSION_CODE.toLong())
-					it.copy(release = release, showRelease = true, message = "Update available: ${release.version.tag}")
-				else it.copy(message = "No newer stable release is available.")
+					it.copy(release = release, showRelease = !silent,
+						message = if (silent) null else "Update available: ${release.version.tag}")
+				else it.copy(message = if (silent) null else "No updates available")
 			}
 		}
 	}
@@ -113,12 +134,12 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
 		}
 	}
 
-	private fun runTask(operation: Long, block: suspend () -> Unit) {
+	private fun runTask(operation: Long, silent: Boolean = false, block: suspend () -> Unit) {
 		task = scope.launch {
 			try { block() }
 			catch (cancelled: CancellationException) { throw cancelled }
 			catch (error: Exception) {
-				operations.update(operation) { it.copy(message = error.message ?: "Update request failed", ready = null) }
+				operations.update(operation) { it.copy(message = if (silent) null else (error.message ?: "Update request failed"), ready = null) }
 			} finally {
 				if (operations.finish(operation)) task = null
 			}
@@ -164,8 +185,7 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
 }
 
 @Composable
-internal fun AppUpdateControls(modifier: Modifier = Modifier) {
-	val model: AppUpdateViewModel = viewModel()
+internal fun AppUpdateControls(model: AppUpdateViewModel, modifier: Modifier = Modifier) {
 	val state = model.state
 	val context = LocalContext.current
 	val scope = rememberCoroutineScope()
@@ -178,7 +198,16 @@ internal fun AppUpdateControls(modifier: Modifier = Modifier) {
 			else "Permission not granted. Installation cancelled.")
 	}
 	Column(modifier) {
-		TextButton(onClick = model::check, enabled = !state.busy) { Text("Check for updates") }
+		Row(verticalAlignment = Alignment.CenterVertically) {
+			Checkbox(checked = model.automaticEnabled, onCheckedChange = model::changeAutomaticEnabled)
+			Text("Check for updates automatically")
+		}
+		val available = state.release
+		Button(onClick = {
+			if (available != null) model.openUpdate() else model.check()
+		}, enabled = !state.busy) {
+			Text(if (available != null) "Install ${available.version.tag}" else "Check for updates")
+		}
 		state.message?.let { Text(it) }
 	}
 	val release = state.release

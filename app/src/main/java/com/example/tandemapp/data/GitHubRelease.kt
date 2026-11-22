@@ -14,14 +14,13 @@ import kotlinx.serialization.json.longOrNull
 data class UpdateVersion(val tag: String, val versionCode: Long) {
 	companion object {
 		fun parse(tag: String): UpdateVersion {
-			val match = Regex("^v?([0-9]{1,5})\\.([0-9]{1,2})\\.([0-9]{1,3})$").matchEntire(tag)
-				?: error("Unsupported release version: $tag")
-			val (major, minor, revision) = match.destructured
-			val majorNumber = major.toLong()
-			require(majorNumber <= 21474) { "Release major version out of range" }
-			val code = majorNumber * 100_000 + minor.toLong() * 1_000 + revision.toLong()
-			require(code in 1..Int.MAX_VALUE.toLong()) { "Release versionCode out of range" }
-			return UpdateVersion(tag, code)
+			val match = Regex("^v?([0-9]{2})\\.(0[1-9]|1[0-2])\\.([0-9]{3})$").matchEntire(tag)
+                ?: error("Unsupported release version: $tag")
+            val (year, month, revision) = match.destructured
+            require(revision.toInt() in 1..999) { "Release revision out of range" }
+            val code = year.toLong() * 100_000 + month.toLong() * 1_000 + revision.toLong()
+            require(code in 1..Int.MAX_VALUE.toLong()) { "Release versionCode out of range" }
+            return UpdateVersion(tag, code)
 		}
 	}
 }
