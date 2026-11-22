@@ -42,17 +42,13 @@ class PumpEventsRepository {
 			val batchStarted = SystemClock.elapsedRealtime()
 			Log.i("TandemStartupPerf", "assignment batch start elapsedRealtimeMs=$batchStarted index=${index + 1} total=${assignments.size} requests=1 pagination=none")
 			logMemory("before_download_${index + 1}")
-			val body = downloadEvents(auth, assignment.id, selectedDate, operational = true)
-			Log.i("P0B_MEMORY", "download_complete index=${index + 1} chars=${body.length}")
-			logMemory("before_decode_${index + 1}")
 			val decodeStarted = SystemClock.elapsedRealtime()
-			val dataset = PumpEventsAdapter.decode(body, requestedAssignmentId = assignment.id)
+			val dataset = downloadEventsStream(auth, assignment.id, selectedDate)
 			logMemory("after_decode_${index + 1}")
-                   val rawChars = body.length.toLong()
                    Log.i(
                            "P0C2A_SOURCES",
                            "index=${index + 1} sources=${dataset.pumpEventsSources.size} " +
-                                   "rawChars=$rawChars cgm=${dataset.cgm.size} " +
+                                   "cgm=${dataset.cgm.size} " +
                                    "supplemental=${dataset.supplementalEvents.size}"
                    )
 			Log.i("TandemStartupPerf", "assignment decode end index=${index + 1} elapsedMs=${SystemClock.elapsedRealtime() - decodeStarted} batchElapsedMs=${SystemClock.elapsedRealtime() - batchStarted}")
@@ -166,6 +162,48 @@ class PumpEventsRepository {
 			120_000,
 			"pump_logs"
 		)
+	}
+
+	private fun downloadEventsStream(auth: TandemAuthContext, assignmentId: String, selectedDate: LocalDate?): DayDataset {
+		val today = LocalDate.now()
+		val center = selectedDate ?: today
+		val end = minOf(center.plusDays(7), today)
+		val start = end.minusDays(AppConfig.HISTORY_DAYS - 1)
+		Log.i("P0C2A_DOWNLOAD", "operational=true selectedDate=$selectedDate start=$start end=$end")
+		val eventIds = "229,5,28,4,26,99,279,3,9,16,59,21,55,20,280,64,65,66,61,33,371,171,369,460,172,370,461,372,480,399,256,213,406,477,394,212,404,214,405,486,447,313,60,14,6,90,230,140,12,11,53,13,63,203,191,81"
+		val query = linkedMapOf(
+			"pumperId" to auth.pumperId,
+			"startDate" to "${start}T00:00:00Z",
+			"endDate" to "${end}T23:59:59Z",
+			"eventIds" to eventIds
+		).entries.joinToString("&") { (key, value) -> "${encode(key)}=${encode(value)}" }
+		val url = "https://source.eu.tandemdiabetes.com/api/reports/bff/pump-logs/$assignmentId?$query"
+		val started = SystemClock.elapsedRealtime()
+		val connection = URL(url).openConnection() as HttpURLConnection
+		try {
+			connection.requestMethod = "GET"
+			connection.connectTimeout = 30_000
+			connection.readTimeout = 120_000
+			connection.setRequestProperty("Accept", "application/json")
+			connection.setRequestProperty("Authorization", "Bearer ${auth.accessToken}")
+			connection.setRequestProperty("User-Agent", "TandemSourceRT/Android")
+			val status = connection.responseCode
+			Log.i("TandemStartupPerf", "http headers operation=pump_logs status=$status elapsedMs=${SystemClock.elapsedRealtime() - started}")
+			if (status != HttpURLConnection.HTTP_OK) {
+				val error = connection.errorStream?.bufferedReader()?.use { reader ->
+					val chars = CharArray(300)
+					val count = reader.read(chars)
+					if (count > 0) String(chars, 0, count) else ""
+				}.orEmpty()
+				throw IllegalStateException("Errore pump-event HTTP $status: $error")
+			}
+			return connection.inputStream.use { stream ->
+				PumpEventsAdapter.decodeStream(stream, requestedAssignmentId = assignmentId)
+			}
+		} finally {
+			Log.i("TandemStartupPerf", "http end operation=pump_logs elapsedMs=${SystemClock.elapsedRealtime() - started}")
+			connection.disconnect()
+		}
 	}
 
 	private fun getJson(url: String, accessToken: String, timeout: Int, operation: String): String {
