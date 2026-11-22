@@ -12,8 +12,8 @@ import com.example.tandemapp.model.PumpEventsSource
 import com.example.tandemapp.model.SupplementalPumpEvent
 import java.io.InputStream
 import java.io.InputStreamReader
-import android.util.JsonReader
-import android.util.JsonToken
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.serialization.Serializable
