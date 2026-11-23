@@ -10,12 +10,38 @@
 ## Attività aperte
 
 ### TS-001 — OutOfMemoryError durante download eventi Tandem
-- **Stato:** `PLANNED`
+- **Stato:** `IN_PROGRESS`
 - **Evidenza:** HONOR 9X, `com.example.tandemapp.st.dev`, versione `26.11.002`; OOM con heap limitato a circa 384 MiB durante `pump_logs`.
-- **Stack:** `PumpEventsRepository.downloadEvents()` → `getJson()` → `readText()`; `PumpEventsRepository.kt:163,186`.
+- **Diagnosi aggiornata:** il download operativo usa `downloadEventsStream()` e `PumpEventsAdapter.decodeStream()`. Il percorso `getJson()/readText()` rimane rilevante per altre operazioni, ma non descrive il download operativo attuale.
 - **Intervento:** analizzare dimensioni, copie, buffering e chiamanti; introdurre gestione a memoria limitata senza perdita di eventi o metadati; verificare retention e cache.
 - **Verifiche:** test mirati sintetici, build debug offline quando applicabile, riproduzione sul dispositivo; nessuna cancellazione dati, reinstallazione o log persistente non autorizzati.
 - **Accettazione:** assenza OOM sul caso riproducibile, completezza dati, UI responsiva, nessuna regressione.
+
+#### Evidenze tecniche disponibili
+- Prima patch locale su `PumpEventsAdapter.kt`: eliminazione della lista completa dei DTO e decodifica su richiesta. Test unitari selezionati e build debug offline: PASS.
+- Benchmark sintetico da 2.000 eventi: parita' tra decoder PASS.
+- Benchmark sintetico da 20.000 eventi: PASS, 228 ms, heap osservato da 82 a 182 MiB, limite JVM 512 MiB.
+- Benchmark sintetico da 100.000 eventi con heap JVM limitato a 384 MiB: PASS, 1.946 ms, picco campionato 377 MiB.
+- Benchmark strumentato da 100.000 eventi: PASS; heap prima del parsing 175 MiB, dopo parsing JSON 360 MiB, dopo costruzione dataset 374 MiB; picco campionato 383 MiB; parsing 347 ms, decodifica 1.573 ms.
+- I valori heap sono misure di una JVM desktop con dati sintetici, non misure Android e non equivalgono necessariamente alla memoria allocata da ciascuna fase.
+- La strumentazione diagnostica e' temporanea e deve essere rimossa prima di produrre un APK.
+- Nessuna verifica conclusiva dell'OOM sul dispositivo HONOR 9X. Nessuna installazione o release autorizzata da queste evidenze.
+
+#### Ipotesi di soluzione da validare
+- Mantenere JSON come formato originale Tandem; non cambiare il contratto del server.
+- Valutare la scrittura progressiva del payload JSON originale in un archivio locale privato, senza costruire stabilmente l'intero albero `JsonObject/JsonArray` in RAM.
+- Valutare un parser streaming che estragga i dati necessari alla visualizzazione e conservi riferimenti verificabili agli eventi originali.
+- Definire un identificatore persistente del payload e un accesso verificabile agli eventi tramite `payloadIndex` ed `eventIndex`, senza perdere ordine originale, campi sconosciuti e metadati.
+- Conservare `clockChanges`, `sequenceNumber`, `sequenceGroup`, `pumpDateTime`, `estimatedDateTime`, `egvTimeStamp` e `deviceAssignmentId`.
+- Progettare compatibilita' di lettura delle cache esistenti, migrazione non distruttiva o strategia esplicita di compatibilita', senza cancellare dati.
+- Valutare scrittura atomica, file incompleti, rollback, spazio disco, retention tramite `AppConfig.HISTORY_DAYS`, export e pulizia degli archivi non piu' referenziati.
+- Non adottare SQLite o altri formati senza una verifica comparativa motivata.
+
+#### Stime e incertezze
+- Il target di picco inferiore a 250 MiB su 100.000 eventi sintetici con heap 384 MiB e' un obiettivo preliminare da verificare, NON una previsione garantita ne' un criterio sufficiente di risoluzione.
+- L'eventuale riduzione di RAM, il costo in spazio disco, la latenza di lettura, il tempo di download e l'impatto sulla UI sono sconosciuti finche' non misurati.
+- La dimensione e la distribuzione dei payload reali potrebbero differire sostanzialmente dai dati sintetici.
+- La fattibilita' della conservazione su file e della lettura delle cache precedenti e' da dimostrare con un prototipo e test di compatibilita'.
 
 ### TS-002 — Navigazione inattesa dal Login
 - **Stato:** `PLANNED`
@@ -28,6 +54,35 @@
 - **Intervento:** organizzare `docs/rules.md` in sezione specifica e sezione comune; mantenere `docs/todo.md` aggiornato.
 - **Verifica:** confrontare con la copia locale prima di sincronizzare per non perdere modifiche non pubblicate.
 
+## Roadmap TS-001
+
+> Roadmap incrementale e revisionabile. Le stime sono ipotesi da verificare; le fasi non implicano approvazione di implementazione, installazione o rilascio.
+
+| Fase | Stato | Attivita' | Evidenza richiesta |
+|---|---|---|---|
+| R0 - Diagnosi | `VERIFIED` limitatamente ai benchmark | Individuare le fasi di maggiore consumo RAM | Test sintetici, misure per fase e limiti documentati |
+| R1 - Contratto dati | `PLANNED` | Mappare uso di `pumpEventsSources`, cache, timeline, export e retention | Matrice di dipendenze, invarianti e casi limite |
+| R2 - Prototipo | `PLANNED` | Verificare archivio JSON locale e parser streaming a memoria limitata | Prototipo sintetico con confronto RAM, CPU, disco e integrita' |
+| R3 - Compatibilita' | `PLANNED` | Definire lettura delle cache precedenti e gestione file atomica | Test di cache vecchie/nuove, errori I/O e recupero |
+| R4 - Integrazione | `PLANNED` | Integrare in piccoli incrementi dopo esito positivo del prototipo | Test mirati, parita' dati, build debug offline |
+| R5 - Prestazioni | `PLANNED` | Ripetere benchmark identici e verificare margine RAM | Confronto prima/dopo su 20.000 e 100.000 eventi |
+| R6 - Dispositivo | `PLANNED` | Verifica controllata su HONOR 9X previa autorizzazione | Nessun OOM riproducibile, dati completi, UI responsiva |
+| R7 - Chiusura | `PLANNED` | Valutare accettazione TS-001 e documentare limiti residui | Evidenze tecniche e approvazione esplicita |
+
+### Rischi da controllare con i test
+- **Integrita' e provenienza:** corrispondenza esatta tra payload archiviato, `payloadIndex`, `eventIndex` e CGM; nessuna perdita o riordinamento degli originali.
+- **Cache e migrazione:** nessuna perdita di dati esistenti, riferimenti invalidi, cache incompatibili lette senza controllo o regressioni della timeline.
+- **Clock e metadati:** conservazione integrale di `clockChanges`, campi sconosciuti e metadati temporali.
+- **I/O e recupero:** download interrotti, file parziali, errori disco, scritture atomiche e pulizia coerente con retention.
+- **Prestazioni:** RAM, GC, CPU, latenza, spazio disco e responsivita' UI durante download, merge, storico ed export.
+- **Privacy:** file locali privati dell'app, nessuna esposizione di payload sanitari nei log o nei test.
+- **Differenze di ambiente:** JVM desktop e Android non sono equivalenti; il PASS sintetico non chiude l'OOM reale.
+
+### Regole di avanzamento
+- Ogni fase registra separatamente fatto, da fare, test eseguiti e rischi residui.
+- Nessuna implementazione architetturale definitiva prima della verifica del prototipo e della compatibilita'.
+- Aggiornare la roadmap se misure o test smentiscono le ipotesi.
+- Nessun commit, push, bump versione, installazione APK o cancellazione dati senza autorizzazione esplicita.
 ## Rischi trasversali
 - Integrità e provenienza dei dati CGM/Tandem e riferimenti `payloadIndex`.
 - OOM, cache obsolete, duplicazioni e blocchi UI.
@@ -39,6 +94,7 @@
 ## Cronologia verifiche
 - 2026-11-22: identificato crash OOM tramite log ADB; **correzione NON ESEGUITA**.
 - 2026-11-22: preparata riorganizzazione documentale; i test applicativi non sono pertinenti a questa modifica.
+- 2026-11-23: TS-001 in corso; test sintetici e benchmark 384 MiB superati, ma picco campionato 383 MiB. Definita ipotesi di archivio JSON locale con parsing streaming, ancora da validare; OOM reale non risolto.
 
 ## TS-001 — Decisione architetturale: snapshot A/B e RAM di 3 giorni
 

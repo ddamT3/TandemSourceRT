@@ -66,14 +66,25 @@ object PumpEventsAdapter {
 	 * require lossless event positions and unknown event properties.
 	 */
 	fun decodeStream(stream: InputStream, requestedAssignmentId: String? = null): DayDataset {
-		val raw = JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+		val ts001Runtime = Runtime.getRuntime()
+        fun ts001HeapMiB(): Long =
+            (ts001Runtime.totalMemory() - ts001Runtime.freeMemory()) / (1024L * 1024L)
+        val ts001Start = System.nanoTime()
+        println("TS001_PARSE_START_MIB=${ts001HeapMiB()}")
+        val raw = JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
 			val root = readJsonValue(reader)
 			if (reader.peek() != JsonToken.END_DOCUMENT) {
 				throw IllegalArgumentException("Unexpected trailing pump-event JSON")
 			}
 			root as? JsonObject ?: throw IllegalArgumentException("Pump-event response must be an object")
 		}
-		return decodeRaw(raw, requestedAssignmentId)
+		println("TS001_PARSE_END_MIB=${ts001HeapMiB()}")
+        println("TS001_PARSE_MS=${(System.nanoTime() - ts001Start) / 1000000L}")
+        val ts001DecodeStart = System.nanoTime()
+        val ts001Dataset = decodeRaw(raw, requestedAssignmentId)
+        println("TS001_DECODE_END_MIB=${ts001HeapMiB()}")
+        println("TS001_DECODE_MS=${(System.nanoTime() - ts001DecodeStart) / 1000000L}")
+        return ts001Dataset
 	}
 
 	private fun readJsonValue(reader: JsonReader): JsonElement = when (reader.peek()) {
@@ -102,16 +113,68 @@ object PumpEventsAdapter {
 		decodeIndexed(payload.events.mapIndexedTo(ArrayList(payload.events.size)) { index, event -> IndexedValue(index, event) },
 			requestedAssignmentId, json.encodeToJsonElement(payload).jsonObject)
 
-	private fun decodeRaw(rawPayload: JsonObject, requestedAssignmentId: String?): DayDataset {
-		// Decode directly into the indexed working list: no additional payload DTO
-		// or second complete list of decoded events.
-		val rawEvents = rawPayload["events"]?.jsonArray
-		val indexedEvents = rawEvents?.mapIndexedTo(ArrayList(rawEvents.size)) { index, element ->
-			IndexedValue(index, json.decodeFromJsonElement<PumpEventDto>(element))
-		} ?: arrayListOf()
-		return decodeIndexed(indexedEvents, requestedAssignmentId, rawPayload)
-	}
+    private fun decodeRaw(rawPayload: JsonObject, requestedAssignmentId: String?): DayDataset {
+        val rawEvents = rawPayload["events"]?.jsonArray ?: JsonArray(emptyList())
 
+        // Sort original indices, not decoded DTO objects.
+        val sortedIndices = rawEvents.indices.toMutableList()
+        sortedIndices.sortWith(compareBy(
+            { index -> rawEventTime(rawEvents[index]) .orEmpty() },
+            { index -> rawEventInteger(rawEvents[index], "sequenceGroup") },
+            { index -> rawEventInteger(rawEvents[index], "sequenceNumber") }
+        ))
+
+        // Decode DTOs on demand. The complete DTO list is never retained.
+        val events = object : AbstractList<PumpEventDto>() {
+            override val size: Int get() = sortedIndices.size
+
+            override fun get(index: Int): PumpEventDto =
+                json.decodeFromJsonElement(rawEvents[sortedIndices[index]])
+        }
+
+        val cgmEvents = sortedIndices.mapNotNull { originalIndex ->
+            val raw = rawEvents[originalIndex] as? JsonObject
+                ?: return@mapNotNull null
+            if (rawEventInteger(raw, "eventCode") != 399) {
+                return@mapNotNull null
+            }
+            IndexedValue(
+                originalIndex,
+                json.decodeFromJsonElement<PumpEventDto>(raw)
+            )
+        }
+
+        val (bolus, carbs) = extractBolus(events)
+
+        return DayDataset(
+            cgm = extractCgm(cgmEvents),
+            bolus = bolus,
+            carbs = carbs,
+            iob = extractIob(events),
+            basal = extractBasal(events),
+            deviceStates = extractDeviceStates(events),
+            supplementalEvents = extractSupplemental(events),
+            pumpEventsSources = listOf(PumpEventsSource(requestedAssignmentId, rawPayload))
+        )
+    }
+
+    private fun rawEventTime(element: JsonElement): String? {
+        val event = element as? JsonObject ?: return null
+        val value = (event["pumpDateTime"] as? JsonPrimitive)?.content
+            ?: (event["estimatedDateTime"] as? JsonPrimitive)?.content
+            ?: return null
+
+        return if (
+            value.endsWith("Z") ||
+            value.substringAfterIndex(10).contains('+') ||
+            value.substringAfterIndex(10).contains('-')
+        ) value else "${value}Z"
+    }
+
+    private fun rawEventInteger(element: JsonElement, field: String): Int {
+        val event = element as? JsonObject ?: return 0
+        return (event[field] as? JsonPrimitive)?.intOrNull ?: 0
+    }
 	private fun decodeIndexed(
 		originalEvents: MutableList<IndexedValue<PumpEventDto>>,
 		requestedAssignmentId: String?,
