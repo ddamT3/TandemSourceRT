@@ -39,3 +39,30 @@
 ## Cronologia verifiche
 - 2026-11-22: identificato crash OOM tramite log ADB; **correzione NON ESEGUITA**.
 - 2026-11-22: preparata riorganizzazione documentale; i test applicativi non sono pertinenti a questa modifica.
+
+## TS-001 — Decisione architetturale: snapshot A/B e RAM di 3 giorni
+
+- **Stato:** `PLANNED` (architettura concordata, non implementata).
+- **RAM:** mantenere soltanto gli ultimi **3 giorni** di dati elaborati; nessun payload JSON originale completo residente in memoria. Lo storico precedente viene caricato da disco su richiesta, con cache limitata.
+- **Persistenza:** due slot privati A/B, ciascuno contenente una generazione completa e coerente: JSON originali, dati elaborati, indici e metadati. La retention rimane definita da `AppConfig.HISTORY_DAYS` e non dalla finestra RAM.
+- **Aggiornamento:** scaricare integralmente la finestra storica richiesta nello slot inattivo, con elaborazione streaming e memoria limitata. Nessun merge incrementale fra generazioni. Verificare tutte le richieste/assignment, copertura temporale, JSON, integrità dei riferimenti e scrittura durabile prima di pubblicare il nuovo snapshot. Un HTTP 200 non prova la completezza.
+- **Attivazione:** manifesto persistente con identificativo di generazione, cambiato atomicamente soltanto dopo validazione. La UI e le nuove letture usano la nuova generazione; i lettori già attivi possono completare sulla precedente. Liberare il vecchio slot soltanto quando non è più referenziato. In caso di errore, mantenere lo snapshot precedente; al riavvio recuperare soltanto generazioni complete e validate.
+- **Integrità:** preservare `eventIndex` originale, `payloadIndex` verificabile, `sequenceNumber`, `sequenceGroup`, `pumpDateTime`, `estimatedDateTime`, `egvTimeStamp`, `deviceAssignmentId`, `clockChanges`, campi JSON sconosciuti e molteplicità CGM. Distinguere originali, normalizzati e visualizzati; garantire coerenza tra CGM e sorgenti.
+- **Migrazione:** non invalidare o cancellare la cache attuale da circa 66 MiB prima di aver creato e validato una generazione recuperabile. Verificare spazio disponibile e rollback; nessuna installazione, reset dati o cancellazione non autorizzata.
+- **Target sperimentali:** heap Java stabile con dashboard aperta **< 40 MiB**; picco durante aggiornamento **< 120 MiB**. Sono obiettivi da misurare, non risultati acquisiti.
+- **Diagnosi HONOR 9X del 2026-11-23:** cache 66 MiB; heap Java 11 MiB prima della lettura, 376 MiB dopo decodifica e dopo GC, 379/384 MiB prima di `pump_logs` (HTTP 200). Il GC osservato non ha ridotto l'heap utilizzato; non attribuire ancora un valore esatto alle singole strutture. Nessuna correzione verificata sul dispositivo.
+
+### Roadmap TS-001 A/B
+
+| Gate | Stato | Attività e criterio di uscita |
+| --- | --- | --- |
+| **R0 — Diagnosi** | `IN_PROGRESS` | Evidenze ADB raccolte; completare analisi del picco e distinguere memoria stabile/transitoria. |
+| **R1 — Contratto dati** | `PLANNED` | Specificare schema snapshot, manifesto, identificativi, copertura, completezza, retention e riferimenti di provenienza. |
+| **R2 — Prototipo isolato** | `PLANNED` | Streaming verso slot inattivo, verifica, switch atomico, simulazioni di crash e riavvio con dati sintetici. |
+| **R3 — Migrazione sicura** | `PLANNED` | Compatibilità con cache esistente, spazio libero, conversione non distruttiva e recupero dopo errore. |
+| **R4 — Integrazione** | `PLANNED` | Repository, dashboard, storico, export, RAM 3 giorni e lettori concorrenti senza payload originali in heap. |
+| **R5 — Test** | `PLANNED` | Parità eventi, metadati, duplicati, clockChanges, retention, download parziale, disco pieno, interruzioni, concorrenza; test sintetici e build debug offline. |
+| **R6 — Dispositivo** | `PLANNED` | Misurare heap stabile e picco sull'HONOR 9X; verificare UI e assenza OOM, senza cancellazioni/installazioni implicite. |
+| **R7 — Consolidamento** | `PLANNED` | Documentare risultati, rischi residui e criteri di chiusura; `VERIFIED` solo dopo prove pertinenti. |
+
+**Rischi da presidiare nei test:** download integrale incompleto ma apparentemente valido; indici non coerenti; perdita di metadati e campi sconosciuti; letture concorrenti durante lo switch; interruzione fra scrittura e attivazione; spazio insufficiente; copie temporanee che causano OOM; regressioni di dashboard, storico, export e retention. Non usare `System.gc()` o `Thread.sleep()` come soluzione all'OOM.
