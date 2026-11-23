@@ -114,6 +114,14 @@ Queste regole sono derivate dai principi generali di `WorkApp3/docs/RULES.md` e 
 5. Non inserire nei sorgenti percorsi assoluti del PC; preferire root verificata, percorsi relativi o variabili d'ambiente documentate.
 6. Preservare encoding, BOM, newline, indentazione e convenzioni locali.
 
+### 2.2.7 Convenzioni di formato
+1. Ogni repository deve dichiarare una politica esplicita per EOL e file binari mediante `.gitattributes`.
+2. Preferire LF per sorgenti e documentazione multipiattaforma; CRLF per script Windows BAT, CMD e PowerShell. Le eccezioni devono essere motivate.
+3. Dichiarare indentazione, charset e newline finale mediante `.editorconfig`, ove applicabile.
+4. Usare un TAB per livello nei linguaggi compatibili; per Python usare quattro spazi per livello secondo PEP 8. Il tasto TAB dell'editor puo' inserire gli spazi previsti.
+5. Non mescolare TAB e spazi per l'indentazione dello stesso linguaggio o file.
+6. Preservare encoding, BOM e convenzioni dei file esistenti durante modifiche puntuali. Non effettuare normalizzazioni massive o riformattazioni collaterali senza autorizzazione.
+7. Verificare con `git ls-files --eol` e `git check-attr` l'effetto delle regole; non modificare `core.autocrlf` globale.
 ### 2.3 PowerShell e strumenti
 1. Per Windows fornire script PowerShell 5.1 **completi e autoconsistenti**, copiabili in una nuova sessione senza variabili precedenti; nessuna patch parziale o modifica manuale a script precedenti.
 2. Preferire blocchi inline `& { ... }`; non creare file `.ps1` salvo richiesta esplicita.
