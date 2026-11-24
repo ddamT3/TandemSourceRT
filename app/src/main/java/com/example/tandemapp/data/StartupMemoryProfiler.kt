@@ -52,9 +52,15 @@ internal object StartupMemoryProfiler {
     private var scheduled: ScheduledFuture<*>? = null
     private var enabled = false
     private var store: MemoryDiagnosticsStore? = null
+    private var preferences: android.content.SharedPreferences? = null
 
     fun initialize(context: Context) = synchronized(lock) {
-        if (store == null) store = MemoryDiagnosticsStore(context.applicationContext.filesDir)
+        if (store == null) {
+            val app = context.applicationContext
+            store = MemoryDiagnosticsStore(app.filesDir)
+            preferences = app.getSharedPreferences("memory_diagnostics", Context.MODE_PRIVATE)
+            setEnabled(preferences?.getBoolean("enabled", false) ?: false)
+        }
     }
 
     fun diagnosticsStore(): MemoryDiagnosticsStore? = synchronized(lock) { store }
@@ -70,6 +76,7 @@ internal object StartupMemoryProfiler {
     fun setEnabled(value: Boolean) = synchronized(lock) {
         if (enabled == value) return@synchronized
         enabled = value
+        preferences?.edit()?.putBoolean("enabled", value)?.apply()
         if (value) {
             lastSampleAt = -5000L
             lastPssAt = -2000L
@@ -125,6 +132,7 @@ internal object StartupMemoryProfiler {
     }
 
     fun resetStatistics() = synchronized(lock) {
+        store?.resetArchive()
         history.clear()
         phases.clear()
         active.clear()
