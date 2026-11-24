@@ -35,7 +35,7 @@ class PumpEventsRepository {
 
 	fun load(auth: TandemAuthContext, selectedDate: LocalDate?): DayDataset {
 		val assignmentsStarted = SystemClock.elapsedRealtime()
-		val assignments = getAssignments(auth)
+		val assignments = measured("assignments") { getAssignments(auth) }
 		Log.i("TandemStartupPerf", "assignments ready elapsedMs=${SystemClock.elapsedRealtime() - assignmentsStarted} count=${assignments.size}")
 		if (assignments.isEmpty()) throw IllegalStateException("Nessun assignmentId disponibile")
 		val datasets = assignments.mapIndexed { index, assignment ->
@@ -43,7 +43,9 @@ class PumpEventsRepository {
 			Log.i("TandemStartupPerf", "assignment batch start elapsedRealtimeMs=$batchStarted index=${index + 1} total=${assignments.size} requests=1 pagination=none")
 			logMemory("before_download_${index + 1}")
 			val decodeStarted = SystemClock.elapsedRealtime()
-			val dataset = downloadEventsStream(auth, assignment.id, selectedDate)
+			val dataset = measured("pump_logs_download_decode") {
+				downloadEventsStream(auth, assignment.id, selectedDate)
+			}
 			logMemory("after_decode_${index + 1}")
                    Log.i(
                            "P0C2A_SOURCES",
@@ -55,9 +57,18 @@ class PumpEventsRepository {
 			dataset
 		}
 		val mergeStarted = SystemClock.elapsedRealtime()
-		val merged = merge(datasets)
+		val merged = measured("assignment_merge") { merge(datasets) }
 		Log.i("TandemStartupPerf", "assignment merge end elapsedMs=${SystemClock.elapsedRealtime() - mergeStarted}")
 		return merged
+	}
+
+	private inline fun <T> measured(name: String, block: () -> T): T {
+		val phase = StartupMemoryProfiler.beginPhase(name)
+		try {
+			return block()
+		} finally {
+			StartupMemoryProfiler.endPhase(phase)
+		}
 	}
 
 	fun exportRaw(auth: TandemAuthContext, selectedDate: LocalDate?, exportDir: File): PumpEventsExportResult {
