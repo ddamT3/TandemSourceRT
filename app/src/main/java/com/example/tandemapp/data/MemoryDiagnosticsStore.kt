@@ -57,6 +57,16 @@ internal class MemoryDiagnosticsStore(filesDir: File) {
 
     }
 
+    fun resetArchive() {
+        worker.execute {
+            synchronized(diskLock) {
+                for (file in files()) {
+                    if (!file.delete()) dropped.incrementAndGet()
+                }
+            }
+        }
+    }
+
     enum class Kind { SAMPLE, PHASE_START, PHASE_END }
 
     // Call off the UI thread. Export only complete, non-expired records.
