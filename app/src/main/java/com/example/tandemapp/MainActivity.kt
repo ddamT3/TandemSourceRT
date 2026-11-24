@@ -1,6 +1,7 @@
 package com.example.tandemapp.st
 
 import android.os.Bundle
+import com.example.tandemapp.data.StartupMemoryProfiler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -12,6 +13,8 @@ class MainActivity : ComponentActivity() {
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
+		StartupMemoryProfiler.initialize(applicationContext)
+		StartupMemoryProfiler.sample("activity_start")
 
 		val vm = HomeViewModel()
 
