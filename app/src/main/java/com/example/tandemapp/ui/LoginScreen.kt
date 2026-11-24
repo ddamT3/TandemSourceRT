@@ -43,6 +43,11 @@ internal fun LoginScreen(
 	onSignInClick: (email: String, password: String, rememberMe: Boolean) -> Unit = { _, _, _ -> }
 ) {
 	var passwordVisible by remember { mutableStateOf(false) }
+	var showDiagnostics by remember { mutableStateOf(false) }
+	if (showDiagnostics) {
+		MemoryDiagnosticsScreen(onBack = { showDiagnostics = false }, modifier = modifier)
+		return
+	}
 
 	Column(
 		modifier = modifier
@@ -135,6 +140,7 @@ internal fun LoginScreen(
 						fontWeight = FontWeight.Medium
 					)
 				}
+				TextButton(onClick = { showDiagnostics = true }) { Text("Memory Diagnostics") }
 				AppUpdateControls(updateModel, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp))
 			}
 		}
