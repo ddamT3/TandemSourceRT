@@ -104,6 +104,11 @@ internal object StartupMemoryProfiler {
         Log.i("P0B2A_MEMORY", "stage=$stage javaUsedMiB=${s.usedBytes / 1048576L} javaMaxMiB=${s.maxBytes / 1048576L}")
     }
 
+    inline fun <T> measure(name: String, block: () -> T): T {
+        val id = beginPhase(name)
+        try { return block() } finally { endPhase(id) }
+    }
+
     fun beginPhase(name: String): Long? = synchronized(lock) {
         if (!enabled || active.size >= ACTIVE_LIMIT) return@synchronized null
         val s = record(false)
