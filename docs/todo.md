@@ -24,7 +24,7 @@
 - Benchmark sintetico da 100.000 eventi con heap JVM limitato a 384 MiB: PASS, 1.946 ms, picco campionato 377 MiB.
 - Benchmark strumentato da 100.000 eventi: PASS; heap prima del parsing 175 MiB, dopo parsing JSON 360 MiB, dopo costruzione dataset 374 MiB; picco campionato 383 MiB; parsing 347 ms, decodifica 1.573 ms.
 - I valori heap sono misure di una JVM desktop con dati sintetici, non misure Android e non equivalgono necessariamente alla memoria allocata da ciascuna fase.
-- La strumentazione diagnostica e' temporanea e deve essere rimossa prima di produrre un APK.
+- La strumentazione sperimentale dei benchmark e' temporanea. Il Memory Profiler permanente approvato il 2026-11-24 e' distinto, disabilitato per default e soggetto ai test di overhead e privacy.
 - Nessuna verifica conclusiva dell'OOM sul dispositivo HONOR 9X. Nessuna installazione o release autorizzata da queste evidenze.
 
 #### Ipotesi di soluzione da validare
@@ -42,6 +42,28 @@
 - L'eventuale riduzione di RAM, il costo in spazio disco, la latenza di lettura, il tempo di download e l'impatto sulla UI sono sconosciuti finche' non misurati.
 - La dimensione e la distribuzione dei payload reali potrebbero differire sostanzialmente dai dati sintetici.
 - La fattibilita' della conservazione su file e della lettura delle cache precedenti e' da dimostrare con un prototipo e test di compatibilita'.
+
+### TS-001 — Memory Profiler permanente (approvato 2026-11-24)
+
+- Stato: `IN_PROGRESS`. Prioritario rispetto all'integrazione A/B.
+- Estendere `StartupMemoryProfiler`: esistono gia' campioni puntuali Logcat di heap Java used/committed/max, native allocated e PSS.
+- Misurare START/END, durata monotona, delta heap, picco campionato e percentuale del limite; dimensioni payload e conteggi aggregati, senza contenuti sanitari.
+- Fasi: avvio, lettura e decode cache, preparazione dashboard, autenticazione, download pump_logs, parsing, estrazione, merge, salvataggio, aggiornamento UI e idle.
+- Switch persistente default OFF; campioni heap ogni 250 ms durante aggiornamento, PSS ogni 2 s, idle ogni 5 s. Nessun GC forzato, sleep artificiale o riferimento ai payload.
+- CSV privato, retention 48 ore e limite complessivo 5 MiB, scrittura progressiva e recupero dei record completi dopo crash; export manuale e reset esplicito delle sole statistiche. Nessun dato sanitario, credenziale, identificativo assignment o corpo HTTP.
+- UI Login/Settings: switch, heap corrente/massimo, picco campionato, percentuale, storico limitato, riepilogo per fase, export CSV e reset statistiche.
+- Test: OFF senza campionamento o scritture diagnostiche, overhead RAM/CPU/I/O, concorrenza, rotazione, crash, privacy, correttezza unita' e timestamp, errori I/O non bloccanti. Il picco campionato e' un limite inferiore del picco effettivo.
+- Dispositivo baseline: HONOR 9X STK_LX1, Android 10, heapgrowthlimit 384m, heapsize 512m, package com.example.tandemapp.st.dev, versione 26.11.002 (versionCode 2611002). ADB autorizzato; processo non trovato durante l'ultima misura, baseline idle NON ESEGUITA.
+
+| Gate | Stato | Attivita' |
+|---|---|---|
+| R1-P1 | `VERIFIED` (analisi statica) | Verifica profiler esistente |
+| R1-P2 | `PLANNED` | Estensione misure e campionamento |
+| R1-P3 | `PLANNED` | CSV persistente limitato, export e recupero |
+| R1-P4 | `PLANNED` | UI diagnostica |
+| R1-P5 | `PLANNED` | Test sintetici, build offline e baseline dispositivo previa autorizzazione installazione |
+
+R2 rimane in corso come prototipo isolato; integrazione R4 subordinata ai gate di compatibilita' e baseline. R5 confronta misure omogenee prima/dopo; R6 verifica sul dispositivo reale. Nessun test applicativo nuovo eseguito.
 
 ### TS-002 — Navigazione inattesa dal Login
 - **Stato:** `PLANNED`
