@@ -102,7 +102,7 @@ internal object StartupMemoryProfiler {
         val s = record(false)
         val id = ++nextId
         active[id] = ActivePhase(name, s, s.usedBytes)
-        persist(s, MemoryDiagnosticsStore.Kind.PHASE_START, id)
+        persist(s, MemoryDiagnosticsStore.Kind.PHASE_START, id, name = name)
         id
     }
 
@@ -112,7 +112,7 @@ internal object StartupMemoryProfiler {
         val s = record(false)
         active.remove(id)
         persist(s, MemoryDiagnosticsStore.Kind.PHASE_END, id,
-            s.elapsedMs - phase.start.elapsedMs, phase.start.usedBytes, phase.peak)
+            s.elapsedMs - phase.start.elapsedMs, phase.start.usedBytes, phase.peak, phase.name)
         if (phases.size >= PHASE_LIMIT) phases.removeFirst()
         phases.addLast(PhaseResult(
             phase.name, s.elapsedMs - phase.start.elapsedMs,
@@ -161,8 +161,8 @@ internal object StartupMemoryProfiler {
 
     private fun persist(s: Sample, kind: MemoryDiagnosticsStore.Kind,
                         id: Long? = null, duration: Long? = null,
-                        start: Long? = null, peak: Long? = null) {
+                        start: Long? = null, peak: Long? = null, name: String? = null) {
         store?.append(kind, s.elapsedMs, s.usedBytes, s.committedBytes,
-            s.maxBytes, s.nativeBytes, s.pssKiB, id, duration, start, peak)
+            s.maxBytes, s.nativeBytes, s.pssKiB, id, duration, start, peak, name)
     }
 }
