@@ -1,4 +1,6 @@
 package com.example.tandemapp.viewmodel
+
+import com.example.tandemapp.data.StartupMemoryProfiler
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
@@ -98,7 +100,7 @@ class HomeViewModel : ViewModel() {
             )
 
             val prepared = withContext(Dispatchers.Default) {
-                val timeline = CgmTimelineResolver.resolve(data)
+                val timeline = StartupMemoryProfiler.measure("dashboard_cgm_timeline") { CgmTimelineResolver.resolve(data) }
 
                 Log.i(
                     "TandemStartupPerf",
@@ -149,7 +151,7 @@ class HomeViewModel : ViewModel() {
 fun setLiveData(data: DayDataset, anchorDate: LocalDate = LocalDate.now()) {
 		val processingStarted = SystemClock.elapsedRealtime()
 		Log.i("TandemStartupPerf", "dashboard processing start elapsedRealtimeMs=$processingStarted")
-		val cgmTimeline = CgmTimelineResolver.resolve(data)
+		val cgmTimeline = StartupMemoryProfiler.measure("dashboard_cgm_timeline") { CgmTimelineResolver.resolve(data) }
 		Log.i("TandemStartupPerf", "dashboard cgm resolve end elapsedMs=${SystemClock.elapsedRealtime() - processingStarted}")
 		val available = cgmTimeline.points.map { it.point }
 			.mapNotNull { runCatching { LocalDate.parse(it.time.substring(0, 10)) }.getOrNull() }
