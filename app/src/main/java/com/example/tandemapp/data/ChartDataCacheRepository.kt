@@ -249,7 +249,7 @@ class ChartDataCacheRepository internal constructor(
         }
 
         val decoded = cacheFile.inputStream().buffered().use {
-            json.decodeFromStream<ChartDataCache>(it)
+            StartupMemoryProfiler.measure("cache_decode") { json.decodeFromStream<ChartDataCache>(it) }
         }
 
         runCatching { StartupMemoryProfiler.sample("P0B2A_CACHE_after_decode") }
@@ -291,7 +291,7 @@ class ChartDataCacheRepository internal constructor(
 		try {
 			temporary.outputStream().use { output ->
 				val buffered = output.buffered()
-				json.encodeToStream(cache, buffered)
+				StartupMemoryProfiler.measure("cache_encode") { json.encodeToStream(cache, buffered) }
 				buffered.flush()
 				output.fd.sync()
 			}
