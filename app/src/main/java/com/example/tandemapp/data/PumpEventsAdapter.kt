@@ -72,7 +72,7 @@ object PumpEventsAdapter {
         val ts001Start = System.nanoTime()
         println("TS001_PARSE_START_MIB=${ts001HeapMiB()}")
         val raw = JsonReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
-			val root = readJsonValue(reader)
+			val root = StartupMemoryProfiler.measure("json_parse") { readJsonValue(reader) }
 			if (reader.peek() != JsonToken.END_DOCUMENT) {
 				throw IllegalArgumentException("Unexpected trailing pump-event JSON")
 			}
@@ -81,7 +81,7 @@ object PumpEventsAdapter {
 		println("TS001_PARSE_END_MIB=${ts001HeapMiB()}")
         println("TS001_PARSE_MS=${(System.nanoTime() - ts001Start) / 1000000L}")
         val ts001DecodeStart = System.nanoTime()
-        val ts001Dataset = decodeRaw(raw, requestedAssignmentId)
+        val ts001Dataset = StartupMemoryProfiler.measure("event_extraction") { decodeRaw(raw, requestedAssignmentId) }
         println("TS001_DECODE_END_MIB=${ts001HeapMiB()}")
         println("TS001_DECODE_MS=${(System.nanoTime() - ts001DecodeStart) / 1000000L}")
         return ts001Dataset
