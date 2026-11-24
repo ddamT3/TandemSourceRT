@@ -1,5 +1,6 @@
 package com.example.tandemapp.data
 
+import android.content.Context
 import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
@@ -50,6 +51,13 @@ internal object StartupMemoryProfiler {
     }
     private var scheduled: ScheduledFuture<*>? = null
     private var enabled = false
+    private var store: MemoryDiagnosticsStore? = null
+
+    fun initialize(context: Context) = synchronized(lock) {
+        if (store == null) store = MemoryDiagnosticsStore(context.applicationContext.filesDir)
+    }
+
+    fun diagnosticsStore(): MemoryDiagnosticsStore? = synchronized(lock) { store }
     private var nextId = 0L
     private var lastPssAt = -2000L
     private var lastSampleAt = -5000L
@@ -94,6 +102,7 @@ internal object StartupMemoryProfiler {
         val s = record(false)
         val id = ++nextId
         active[id] = ActivePhase(name, s, s.usedBytes)
+        persist(s, MemoryDiagnosticsStore.Kind.PHASE_START, id)
         id
     }
 
@@ -102,6 +111,8 @@ internal object StartupMemoryProfiler {
         val phase = active[id] ?: return@synchronized
         val s = record(false)
         active.remove(id)
+        persist(s, MemoryDiagnosticsStore.Kind.PHASE_END, id,
+            s.elapsedMs - phase.start.elapsedMs, phase.start.usedBytes, phase.peak)
         if (phases.size >= PHASE_LIMIT) phases.removeFirst()
         phases.addLast(PhaseResult(
             phase.name, s.elapsedMs - phase.start.elapsedMs,
@@ -144,6 +155,14 @@ internal object StartupMemoryProfiler {
         for (phase in active.values) phase.peak = maxOf(phase.peak, used)
         if (history.size >= HISTORY_LIMIT) history.removeFirst()
         history.addLast(s)
+        persist(s, MemoryDiagnosticsStore.Kind.SAMPLE)
         return s
+    }
+
+    private fun persist(s: Sample, kind: MemoryDiagnosticsStore.Kind,
+                        id: Long? = null, duration: Long? = null,
+                        start: Long? = null, peak: Long? = null) {
+        store?.append(kind, s.elapsedMs, s.usedBytes, s.committedBytes,
+            s.maxBytes, s.nativeBytes, s.pssKiB, id, duration, start, peak)
     }
 }
