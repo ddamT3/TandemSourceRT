@@ -49,7 +49,7 @@ internal object PumpPayloadStreamParser {
 	 * Counts UTF-16 code units, including JSON escape syntax.
 	 * Gson remains responsible for JSON grammar validation.
 	 */
-	private class BoundedJsonReader(
+	internal class BoundedJsonReader(
 		private val delegate: Reader,
 		private val maxTokenChars: Int
 	) : Reader() {
