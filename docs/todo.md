@@ -1308,3 +1308,10 @@ Test mirati offline: estrattore 17/17, validatore CGM 14/14, nuovi budget 7/7 (i
 Limiti provvisori: input 512 MiB, payload 256 MiB, dataset 32 MiB, output aggregato 512 MiB, riserva disco 16 MiB, metadati serializzati 4 MiB, 500000 nodi dataset, 100000 CGM, 128 sorgenti. Verificati rifiuto e cleanup con input sintetici invariati. Temporanei estrattore sotto build.
 Non misurato heap effettivo della migrazione; budget serializzati non equivalgono a heap. Singolo descrittore costruito prima del controllo aggregato. Riserva disco non esclusiva. Regressione completa non rieseguita in questo incremento. Nessuna modifica dispositivo.
 Prossimo MEM-14.3c.2d: integrare estrattore e validatore in staging non pubblicato, verificando limiti prima della deserializzazione e integrita' dei riferimenti.
+
+#### MEM-14.3c.2d - VERIFIED
+
+HEAD locale 72057505f58648489229ca0fa061adff8510827e.
+Regressione offline: 300 test, 298 PASS, zero failure/error, 2 skip attesi (PumpEventsAdapterParityTest e PumpPayloadDescriptorBenchmarkTest). Migrazione 9/9, estrattore 17/17, validatore CGM 14/14; assembleDebug PASS. Nessuna modifica dispositivo.
+Coordinatore di staging non pubblicato: parita logica JSON, serie, riferimenti CGM, molteplicità, metadati e cleanup verificati su fixture sintetiche. Restano aperti payload senza events, locking, manifest, pubblicazione atomica, recovery e misura heap della migrazione completa.
+Prossimo MEM-14.3c.3: manifest e pubblicazione atomica, senza modificare cache operativa o marker legacy.
