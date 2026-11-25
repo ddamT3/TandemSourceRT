@@ -964,7 +964,8 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.1 | Analisi navigazione e avvio | DONE |
 | MEM-13.2 | Monitor nella barra inferiore | IN_PROGRESS |
 | MEM-13.3 | Avvio senza caricamento automatico | IN_PROGRESS |
-| MEM-13.4 | Test e build offline | PLANNED |
+| MEM-13.3a | Capacita e pressione memoria dispositivo/app | PLANNED |
+| MEM-13.4 | Test e build offline (dopo MEM-13.3a) | PLANNED |
 | MEM-13.5 | Installazione autorizzata e verifica GUI | PLANNED |
 | MEM-13.6 | Misure a riposo e durante caricamento | PLANNED |
 | MEM-13.7 | Analisi fasi critiche | PLANNED |
@@ -982,3 +983,45 @@ accesso Monitor, persistenza preferenza, navigazione e caricamento
 manuale. Verificare esportazione misure precedenti e crash report.
 Non assumere che il monitor resti reattivo durante saturazione heap.
 Non cancellare cache o dati. MEM-12 resta BLOCKED fino a baseline.
+
+#### MEM-13.3a - Capacita memoria e pressione del sistema
+
+Requisiti approvati dall'utente. Completare prima di MEM-13.4,
+in modo da effettuare un unico ciclo di build e installazione.
+
+- Device memory: ActivityManager.MemoryInfo.totalMem, availMem,
+  threshold e lowMemory. RAM totale utilizzabile dal sistema,
+  non necessariamente RAM fisica nominale. Mostrare disponibile,
+  occupazione stimata e soglia critica.
+- Application memory: Runtime.maxMemory(), heap utilizzato
+  (totalMemory - freeMemory), heap committed, percentuale,
+  margine residuo e picco registrato. Mostrare anche native heap
+  allocato e PSS del processo, senza sommarli all'heap Java.
+- Grafico heap con limite massimo e storico RAM disponibile
+  del dispositivo, confrontabili sulla stessa base temporale.
+- Campionamento heap 250 ms durante attivita, parametri di
+  sistema e PSS ogni 2 s; preservare politica idle esistente.
+  Nessun campionamento periodico aggiuntivo con profiler OFF.
+- Conservare misure di sistema nello storico esportabile,
+  incluse condizioni iniziali e misure precedenti al crash.
+  Mantenere compatibilita con CSV precedenti, distinguere
+  valori mancanti da zero, mantenere retention 48 h e cap 5 MiB.
+- Distinguere saturazione heap applicativo, pressione memoria
+  del sistema e crescita PSS/native; indicatori diagnostici,
+  non soglie di stabilita garantita. Il margine heap non
+  garantisce il successo della prossima allocazione.
+- Nessuna raccolta di dati sanitari, credenziali o identificativi.
+  Nessuna modifica al limite heap Android, largeHeap, cache,
+  retention applicativa o percorso di parsing operativo.
+
+Verifiche: test sintetici di calcolo percentuali e margini,
+valori mancanti, compatibilita storico/export, limiti archivio,
+campionamento e overhead ON/OFF. Build offline e verifica Android
+di accesso Monitor, valori coerenti con strumenti di sistema,
+baseline a riposo e misure durante caricamento manuale.
+Confrontare esecuzioni con diversa RAM disponibile senza
+attribuire causalita al solo valore di RAM libera.
+Il limite heap di 384 MiB osservato su HONOR 9X e un'evidenza
+precedente, non un valore da codificare nel software.
+
+Stato: PLANNED. Implementazione e test non ancora eseguiti.
