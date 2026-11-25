@@ -1,6 +1,8 @@
 package com.example.tandemapp.data
 
 import java.io.File
+import java.io.IOException
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
@@ -59,5 +61,72 @@ class LegacyCacheMigrationTest {
 		assertTrue(LegacyCacheMigration.prepare(source, stage).isEmpty())
 		assertEquals(input, source.readText())
 		assertEquals(setOf("dataset.json"), stage.list()!!.toSet())
+	}
+
+	private fun rejected(input: String, expected: Class<out Exception>, message: String? = null,
+		limits: LegacyCacheExtractor.Limits = LegacyCacheExtractor.Limits()) {
+		val source = temp.newFile()
+		source.writeText(input)
+		val stage = File(temp.root, "stage")
+		val marker = temp.newFile()
+		marker.writeText("synthetic-version")
+		try {
+			LegacyCacheMigration.prepare(source, stage, limits)
+			fail("Expected migration rejection")
+		} catch (failure: Exception) {
+			assertTrue("Unexpected exception type", expected.isInstance(failure))
+			if (message != null) assertEquals(message, failure.message)
+			assertFalse(stage.exists())
+			assertEquals(input, source.readText())
+			assertEquals("synthetic-version", marker.readText())
+		}
+	}
+
+	@Test(timeout = 30000L) fun rejectsMissingRequiredSeries() {
+		val input = envelope("[${point(0)}]", "[${wrapper(raw, "test")}]")
+			.replace("\"carbs\":[{\"time\":\"synthetic\",\"carbs_g\":2.0}],", "")
+		rejected(input, SerializationException::class.java)
+	}
+
+	@Test(timeout = 30000L) fun rejectsIncorrectCgmValue() {
+		rejected(envelope("[${point(0).replace("\"value\":100", "\"value\":101")}]",
+			"[${wrapper(raw, "test")}]"), IOException::class.java, "CGM provenance mismatch")
+	}
+
+	@Test(timeout = 30000L) fun rejectsInvalidPayloadReference() {
+		rejected(envelope("[${point(1)}]", "[${wrapper(raw, "test")}]"),
+			IOException::class.java, "Invalid CGM payload index")
+	}
+
+	@Test(timeout = 30000L) fun rejectsInvalidEventReference() {
+		rejected(envelope("[${point(0).replace("\"eventIndex\":1", "\"eventIndex\":2")}]",
+			"[${wrapper(raw, "test")}]"), IOException::class.java, "Invalid CGM event index")
+	}
+
+	@Test(timeout = 30000L) fun rejectsMissingProvenance() {
+		rejected(envelope("""[{"time":"synthetic","value":100}]""", "[${wrapper(raw, "test")}]"),
+			IOException::class.java, "Missing CGM provenance")
+	}
+
+	@Test(timeout = 30000L) fun propagatesExtractionBudgetFailure() {
+		rejected(envelope("[${point(0)}]", "[${wrapper(raw, "test")}]"),
+			IOException::class.java, "File output limit exceeded",
+			LegacyCacheExtractor.Limits(maxDatasetBytes = 10))
+	}
+
+	@Test(timeout = 30000L) fun existingStageUntouched() {
+		val source = temp.newFile()
+		val input = envelope("[]", "[]")
+		source.writeText(input)
+		val stage = temp.newFolder()
+		val sentinel = File(stage, "sentinel")
+		sentinel.writeText("keep")
+		try {
+			LegacyCacheMigration.prepare(source, stage)
+			fail("Expected existing stage rejection")
+		} catch (expected: IllegalArgumentException) {
+			assertEquals("keep", sentinel.readText())
+			assertEquals(input, source.readText())
+		}
 	}
 }
