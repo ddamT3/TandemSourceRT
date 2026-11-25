@@ -94,7 +94,10 @@
 - Repository: `ddamT3/TandemSourceRT`; verificare sempre branch e remote effettivi.
 - Per commit autorizzati verificare l'identità Git locale `ddamT3 <ddamT3@users.noreply.github.com>`, senza modificare la configurazione globale.
 - Negli script usare `TANDEMSOURCERT_ROOT` oppure una root verificata; costruire i percorsi con `Join-Path`.
-- Preferire PowerShell per modifiche semplici; Codex o Work soltanto quando la complessità lo giustifica.
+- Preferire modifiche dirette su GitHub tramite gli strumenti disponibili, sul branch di lavoro verificato, con commit WIP piccoli e tracciabili quando autorizzati. Non usare main per il lavoro in corso.
+- Riservare PowerShell alle verifiche locali, sincronizzazione, test, build, prove sul dispositivo e modifiche non eseguibili direttamente su GitHub. Codex o Work soltanto quando la complessità lo giustifica.
+- Prima di modificare file su GitHub verificare la presenza di modifiche locali non pubblicate; consolidarle con un WIP autorizzato oppure evitare sovrapposizioni. Non sovrascrivere il lavoro locale.
+- L'autorizzazione esplicita a un task con commit/push WIP copre soltanto gli incrementi pertinenti sul branch di lavoro; non autorizza release, deploy, installazioni, bump, force push o pubblicazione di dati riservati. Verificare ogni SHA remoto e distinguere modifiche pubblicate da test effettivamente eseguiti.
 
 ## 2. Regole generali — valide per tutti i progetti
 
