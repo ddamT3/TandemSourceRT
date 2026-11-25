@@ -1,6 +1,7 @@
 package com.example.tandemapp.data
 
 import android.content.Context
+import android.app.ActivityManager
 import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
@@ -9,13 +10,17 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 internal object StartupMemoryProfiler {
+    data class DeviceMemory(val totalBytes: Long, val availableBytes: Long,
+                            val thresholdBytes: Long, val lowMemory: Boolean)
+
     data class Sample(
         val elapsedMs: Long,
         val usedBytes: Long,
         val committedBytes: Long,
         val maxBytes: Long,
         val nativeBytes: Long,
-        val pssKiB: Int?
+        val pssKiB: Int?,
+        val deviceMemory: DeviceMemory? = null
     )
 
     data class PhaseResult(
@@ -57,6 +62,7 @@ internal object StartupMemoryProfiler {
     private var sampleOverride: ((Boolean) -> Sample)? = null
     private var automaticSampling = true
     private var store: MemoryDiagnosticsStore? = null
+    private var activityManager: ActivityManager? = null
     private var preferences: android.content.SharedPreferences? = null
 
     internal inline fun <T> diagnosticOr(
@@ -77,6 +83,7 @@ internal object StartupMemoryProfiler {
     private fun initializeInternal(context: Context) = synchronized(lock) {
         if (store == null) {
             val app = context.applicationContext
+            activityManager = app.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             store = MemoryDiagnosticsStore(app.filesDir)
             preferences = app.getSharedPreferences("memory_diagnostics", Context.MODE_PRIVATE)
             setEnabled(preferences?.getBoolean("enabled", false) ?: false)
@@ -216,7 +223,14 @@ internal object StartupMemoryProfiler {
             committed,
             runtime.maxMemory(),
             Debug.getNativeHeapAllocatedSize(),
-            pss
+            pss,
+            if (includePss) diagnosticOr<DeviceMemory?>(null) {
+                activityManager?.let { manager ->
+                    val info = ActivityManager.MemoryInfo()
+                    manager.getMemoryInfo(info)
+                    DeviceMemory(info.totalMem, info.availMem, info.threshold, info.lowMemory)
+                }
+            } else null
         )
     }
 
@@ -250,6 +264,8 @@ internal object StartupMemoryProfiler {
                         id: Long? = null, duration: Long? = null,
                         start: Long? = null, peak: Long? = null, name: String? = null) {
         store?.append(kind, s.elapsedMs, s.usedBytes, s.committedBytes,
-            s.maxBytes, s.nativeBytes, s.pssKiB, id, duration, start, peak, name)
+            s.maxBytes, s.nativeBytes, s.pssKiB, id, duration, start, peak, name,
+            s.deviceMemory?.totalBytes, s.deviceMemory?.availableBytes,
+            s.deviceMemory?.thresholdBytes, s.deviceMemory?.lowMemory)
     }
 }
