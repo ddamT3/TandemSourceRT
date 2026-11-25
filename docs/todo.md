@@ -1300,3 +1300,11 @@ su fixture sintetiche. Nessuna modifica dispositivo. Nessuna prova OOM risolta.
 Prossimo MEM-14.3c.2c: budget aggregati, limiti prima delle allocazioni/scritture,
 limiti descrittori e metadati, test di superamento e cleanup. Restano aperti
 integrazione, payload senza events, temporanei, pubblicazione e recovery.
+
+#### MEM-14.3c.2c - VERIFIED
+
+HEAD locale d093856ca77a7007b2492d9dfba60f1572d10cf0.
+Test mirati offline: estrattore 17/17, validatore CGM 14/14, nuovi budget 7/7 (inclusi nei 17), zero failure/error/skip; assembleDebug PASS.
+Limiti provvisori: input 512 MiB, payload 256 MiB, dataset 32 MiB, output aggregato 512 MiB, riserva disco 16 MiB, metadati serializzati 4 MiB, 500000 nodi dataset, 100000 CGM, 128 sorgenti. Verificati rifiuto e cleanup con input sintetici invariati. Temporanei estrattore sotto build.
+Non misurato heap effettivo della migrazione; budget serializzati non equivalgono a heap. Singolo descrittore costruito prima del controllo aggregato. Riserva disco non esclusiva. Regressione completa non rieseguita in questo incremento. Nessuna modifica dispositivo.
+Prossimo MEM-14.3c.2d: integrare estrattore e validatore in staging non pubblicato, verificando limiti prima della deserializzazione e integrita' dei riferimenti.
