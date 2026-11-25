@@ -15,6 +15,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.tandemapp.data.StartupMemoryProfiler
+import com.example.tandemapp.data.CrashDiagnostics
+import com.example.tandemapp.data.MemoryDiagnosticsStore.ResetState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -27,11 +29,21 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
     val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf(StartupMemoryProfiler.getSnapshot()) }
     var message by remember { mutableStateOf("") }
+    var crashExportBusy by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
+    var resetState by remember {
+        mutableStateOf(
+            StartupMemoryProfiler.diagnosticsStore()?.getResetState()
+                ?: ResetState.IDLE
+        )
+    }
+    val resetPending = resetState == ResetState.PENDING
     LaunchedEffect(Unit) {
         StartupMemoryProfiler.initialize(context)
         while (true) {
             snapshot = StartupMemoryProfiler.getSnapshot()
+            resetState = StartupMemoryProfiler.diagnosticsStore()
+                ?.getResetState() ?: ResetState.IDLE
             delay(1000)
         }
     }
@@ -46,6 +58,35 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
                     "Export completed"
                 } catch (_: Exception) {
                     "Export failed"
+                }
+            }
+        }
+    }
+    val crashExport = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri == null) {
+            crashExportBusy = false
+        } else {
+            scope.launch {
+                try {
+                    message = withContext(Dispatchers.IO) {
+                        try {
+                            val report = CrashDiagnostics.readExportableReport(context)
+                            if (report == null) {
+                                "Crash report unavailable or expired"
+                            } else {
+                                val output = context.contentResolver.openOutputStream(uri)
+                                    ?: error("Unavailable")
+                                output.use { it.write(report) }
+                                "Crash report exported"
+                            }
+                        } catch (_: Exception) {
+                            "Crash report export failed"
+                        }
+                    }
+                } finally {
+                    crashExportBusy = false
                 }
             }
         }
@@ -90,8 +131,71 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
             Text("Start ${mib(phase.startBytes)} | End ${mib(phase.endBytes)} | Peak ${mib(phase.peakBytes)} | Delta ${mib(phase.deltaBytes)}",
                 style = MaterialTheme.typography.bodySmall)
         }
-        Button(onClick = { export.launch("memory_diagnostics.csv") }) { Text("Export CSV") }
-        OutlinedButton(onClick = { confirmReset = true }) { Text("Reset statistics") }
+        Button(
+            onClick = { export.launch("memory_diagnostics.csv") },
+            enabled = !resetPending
+        ) { Text("Export CSV") }
+
+        OutlinedButton(
+            enabled = !crashExportBusy,
+            onClick = {
+                crashExportBusy = true
+                message = ""
+                scope.launch {
+                    var launched = false
+                    try {
+                        val available = withContext(Dispatchers.IO) {
+                            try {
+                                CrashDiagnostics.readExportableReport(context) != null
+                            } catch (_: Exception) {
+                                false
+                            }
+                        }
+
+                        if (available) {
+                            crashExport.launch("crash_diagnostics.txt")
+                            launched = true
+                        } else {
+                            message = "No crash report available"
+                        }
+                    } catch (_: Exception) {
+                        message = "Unable to open crash report export"
+                    } finally {
+                        if (!launched) {
+                            crashExportBusy = false
+                        }
+                    }
+                }
+            }
+        ) {
+            Text("Export crash report")
+        }
+
+        OutlinedButton(
+            onClick = { confirmReset = true },
+            enabled = !resetPending
+        ) { Text("Reset statistics") }
+
+        when (resetState) {
+            ResetState.IDLE -> Unit
+            ResetState.PENDING -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text("Reset in progress")
+                }
+            }
+            ResetState.SUCCESS -> Text("Diagnostic reset completed")
+            ResetState.FAILED -> Text(
+                "Diagnostic reset failed. Please retry.",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         if (message.isNotEmpty()) Text(message)
     }
     if (confirmReset) AlertDialog(
@@ -99,8 +203,17 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
         title = { Text("Reset memory diagnostics?") },
         text = { Text("Only diagnostic statistics and CSV history will be cleared.") },
         confirmButton = { TextButton(onClick = {
-            StartupMemoryProfiler.resetStatistics()
-            snapshot = StartupMemoryProfiler.getSnapshot()
+            message = ""
+            try {
+                val store = StartupMemoryProfiler.diagnosticsStore()
+                    ?: error("Diagnostics unavailable")
+
+                StartupMemoryProfiler.resetStatistics()
+                resetState = store.getResetState()
+                snapshot = StartupMemoryProfiler.getSnapshot()
+            } catch (_: Exception) {
+                message = "Unable to request diagnostic reset"
+            }
             confirmReset = false
         }) { Text("Reset") } },
         dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Cancel") } }

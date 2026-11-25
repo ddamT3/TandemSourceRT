@@ -51,10 +51,30 @@ internal object StartupMemoryProfiler {
     }
     private var scheduled: ScheduledFuture<*>? = null
     private var enabled = false
+
+    // Private injection points for deterministic JVM tests.
+    // Production always uses Android measurements and automatic sampling.
+    private var sampleOverride: ((Boolean) -> Sample)? = null
+    private var automaticSampling = true
     private var store: MemoryDiagnosticsStore? = null
     private var preferences: android.content.SharedPreferences? = null
 
-    fun initialize(context: Context) = synchronized(lock) {
+    internal inline fun <T> diagnosticOr(
+        fallback: T,
+        block: () -> T
+    ): T {
+        return try {
+            block()
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    fun initialize(context: Context) = diagnosticOr(Unit) {
+        initializeInternal(context)
+    }
+
+    private fun initializeInternal(context: Context) = synchronized(lock) {
         if (store == null) {
             val app = context.applicationContext
             store = MemoryDiagnosticsStore(app.filesDir)
@@ -80,15 +100,20 @@ internal object StartupMemoryProfiler {
         if (value) {
             lastSampleAt = -5000L
             lastPssAt = -2000L
+            if (!automaticSampling) return@synchronized
+
             scheduled = executor.scheduleWithFixedDelay({
-                synchronized(lock) {
-                    if (enabled) {
-                        val now = SystemClock.elapsedRealtime()
-                        val interval = if (active.isEmpty()) 5000L else 250L
-                        if (now - lastSampleAt >= interval) {
-                            record(now - lastPssAt >= 2000L)
+                diagnosticOr(Unit) {
+                    synchronized(lock) {
+                        if (enabled) {
+                            val now = SystemClock.elapsedRealtime()
+                            val interval = if (active.isEmpty()) 5000L else 250L
+                            if (now - lastSampleAt >= interval) {
+                                record(now - lastPssAt >= 2000L)
+                            }
                         }
                     }
+                    Unit
                 }
             }, 0, 250, TimeUnit.MILLISECONDS)
         } else {
@@ -98,7 +123,11 @@ internal object StartupMemoryProfiler {
         }
     }
 
-    fun sample(stage: String) = synchronized(lock) {
+    fun sample(stage: String) = diagnosticOr(Unit) {
+        sampleInternal(stage)
+    }
+
+    private fun sampleInternal(stage: String) = synchronized(lock) {
         if (!enabled) return@synchronized
         val s = record(false)
         Log.i("P0B2A_MEMORY", "stage=$stage javaUsedMiB=${s.usedBytes / 1048576L} javaMaxMiB=${s.maxBytes / 1048576L}")
@@ -109,20 +138,38 @@ internal object StartupMemoryProfiler {
         try { return block() } finally { endPhase(id) }
     }
 
-    fun beginPhase(name: String): Long? = synchronized(lock) {
+    fun beginPhase(name: String): Long? = diagnosticOr<Long?>(null) {
+        CrashDiagnostics.markPhase(name)
+        beginPhaseInternal(name)
+    }
+
+    private fun beginPhaseInternal(name: String): Long? = synchronized(lock) {
         if (!enabled || active.size >= ACTIVE_LIMIT) return@synchronized null
         val s = record(false)
         val id = ++nextId
         active[id] = ActivePhase(name, s, s.usedBytes)
-        persist(s, MemoryDiagnosticsStore.Kind.PHASE_START, id, name = name)
-        id
+        try {
+            persist(s, MemoryDiagnosticsStore.Kind.PHASE_START, id, name = name)
+            id
+        } catch (e: Exception) {
+            active.remove(id)
+            throw e
+        }
     }
 
-    fun endPhase(id: Long?) = synchronized(lock) {
+    fun endPhase(id: Long?) = diagnosticOr(Unit) {
+        endPhaseInternal(id)
+    }
+
+    private fun endPhaseInternal(id: Long?) = synchronized(lock) {
         if (!enabled || id == null) return@synchronized
         val phase = active[id] ?: return@synchronized
-        val s = record(false)
-        active.remove(id)
+        val s = try {
+            record(false)
+        } finally {
+            active.remove(id)
+        }
+
         persist(s, MemoryDiagnosticsStore.Kind.PHASE_END, id,
             s.elapsedMs - phase.start.elapsedMs, phase.start.usedBytes, phase.peak, phase.name)
         if (phases.size >= PHASE_LIMIT) phases.removeFirst()
@@ -145,13 +192,15 @@ internal object StartupMemoryProfiler {
         current = null
     }
 
-    private fun record(includePss: Boolean): Sample {
+    private fun collectAndroidSample(includePss: Boolean): Sample {
         val runtime = Runtime.getRuntime()
         val now = SystemClock.elapsedRealtime()
         val committed = runtime.totalMemory()
         val used = (committed - runtime.freeMemory()).coerceAtLeast(0L)
+
         val pss = if (includePss) {
             lastPssAt = now
+
             try {
                 val info = Debug.MemoryInfo()
                 Debug.getMemoryInfo(info)
@@ -160,15 +209,40 @@ internal object StartupMemoryProfiler {
                 null
             }
         } else null
-        val s = Sample(now, used, committed, runtime.maxMemory(),
-            Debug.getNativeHeapAllocatedSize(), pss)
-        lastSampleAt = now
+
+        return Sample(
+            now,
+            used,
+            committed,
+            runtime.maxMemory(),
+            Debug.getNativeHeapAllocatedSize(),
+            pss
+        )
+    }
+
+    private fun record(includePss: Boolean): Sample {
+        val s = sampleOverride?.invoke(includePss)
+            ?: collectAndroidSample(includePss)
+
+        if (includePss) {
+            lastPssAt = s.elapsedMs
+        }
+
+        lastSampleAt = s.elapsedMs
         current = s
-        peak = maxOf(peak, used)
-        for (phase in active.values) phase.peak = maxOf(phase.peak, used)
-        if (history.size >= HISTORY_LIMIT) history.removeFirst()
+        peak = maxOf(peak, s.usedBytes)
+
+        for (phase in active.values) {
+            phase.peak = maxOf(phase.peak, s.usedBytes)
+        }
+
+        if (history.size >= HISTORY_LIMIT) {
+            history.removeFirst()
+        }
+
         history.addLast(s)
         persist(s, MemoryDiagnosticsStore.Kind.SAMPLE)
+
         return s
     }
 

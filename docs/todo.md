@@ -144,3 +144,802 @@ R2 rimane in corso come prototipo isolato; integrazione R4 subordinata ai gate d
 | **R7 — Consolidamento** | `PLANNED` | Documentare risultati, rischi residui e criteri di chiusura; `VERIFIED` solo dopo prove pertinenti. |
 
 **Rischi da presidiare nei test:** download integrale incompleto ma apparentemente valido; indici non coerenti; perdita di metadati e campi sconosciuti; letture concorrenti durante lo switch; interruzione fra scrittura e attivazione; spazio insufficiente; copie temporanee che causano OOM; regressioni di dashboard, storico, export e retention. Non usare `System.gc()` o `Thread.sleep()` come soluzione all'OOM.
+
+### TS-001 - Consolidamento Memory Profiler MEM-09
+
+Data: 2026-11-24.
+Branch: work/pump-events-oom-sync-20261122.
+HEAD di riferimento: 245bd3c.
+Modifiche locali non ancora committate.
+
+Stato complessivo TS-001: IN_PROGRESS.
+
+Questa sezione aggiorna lo stato operativo del Memory Profiler.
+Le evidenze storiche precedenti rimangono valide nel loro contesto.
+
+#### Checkpoint JVM
+
+| Checkpoint | Stato | Evidenza |
+|---|---|---|
+| MEM-01 | VERIFIED JVM | Isolamento eccezioni diagnostiche |
+| MEM-02 | VERIFIED JVM | Reset archivio, generazioni e stato reset |
+| MEM-03 | VERIFIED JVM | Recupero record CSV completi |
+| MEM-04 | VERIFIED JVM | Retention e manutenzione periodica |
+| MEM-05 | VERIFIED JVM | Indice dimensionale incrementale |
+| MEM-06.1 | VERIFIED JVM | Concorrenza archivio |
+| MEM-06.2a | VERIFIED JVM | Iniezione campioni sintetici |
+| MEM-06.2b | VERIFIED JVM | Profiler attivo e strutture limitate |
+| MEM-06.3 | VERIFIED JVM | Concorrenza export/reset |
+| MEM-06.4 | VERIFIED JVM | Correlazione profiler e CSV |
+| MEM-07.1 | VERIFIED JVM | Limite archivio anche in manutenzione |
+| MEM-07.2 | VERIFIED JVM | Benchmark sintetici completati |
+| MEM-08.2 | VERIFIED JVM | Regressione mirata e build debug |
+
+#### Risultati regressione MEM-08.2
+
+- StartupMemoryProfilerTest: 27 PASS.
+- MemoryDiagnosticsStoreTest: 46 PASS.
+- PumpEventsMetadataTest: 7 PASS.
+- PumpEventsStreamingTest: 1 PASS.
+- ChartDataCacheRepositoryTest: 12 PASS.
+- CgmTimelineTest: 15 PASS.
+- TimeEventTest: 7 PASS.
+- DashboardEventTimelineTest: 6 PASS.
+- PumpEventsAdapterParityTest: 1 SKIP.
+
+Totale: 122 test, 121 PASS, 1 SKIP, 0 FAIL, 0 ERROR.
+Test diagnostici: 73 PASS.
+Git diff check: PASS.
+Build assembleDebug offline: PASS.
+
+Lo SKIP riguarda la precondizione del fixture locale
+LocalAssets/pump_event per la parita Kotlin/Python.
+Non costituisce una verifica di parita superata.
+Non aggirare le precondizioni del test.
+Completare la verifica prima della validazione definitiva A/B.
+
+La regressione e mirata, non comprende l'intera suite.
+PumpEventsMemoryBenchmarkTest non eseguito in questo checkpoint.
+
+#### Benchmark sintetici JVM
+
+| Metrica | Prima esecuzione | Consolidamento |
+|---|---:|---:|
+| Baseline ns/op | 12.815 | 13.076 |
+| Profiler OFF ns/op | 27.960 | 23.293 |
+| Profiler ON ns/op | 170.524 | 173.260 |
+| CPU thread ON ns/op | 156.25 | 156.25 |
+| Heap delta OFF byte | 0 | 229848 |
+| Heap delta ON byte | 36700160 | 7809832 |
+| Crescita heap osservata ON byte | 36700160 | 9767960 |
+| Storico campioni | 512 | 512 |
+| Storico fasi | 128 | 128 |
+| Record CSV | 3200 | 3200 |
+| Dimensione CSV byte | 280490 | 280490 |
+| Scrittura CSV record/s | 5899.99 | 5785.05 |
+| Record persi | 0 | 0 |
+
+Le misure sono preliminari e riferite alla JVM desktop.
+Il benchmark ON/OFF usa campioni sintetici.
+La misura CPU riguarda il thread chiamante.
+La misura CPU OFF ha risoluzione insufficiente.
+Le misure heap includono allocazioni temporanee e GC.
+Non rappresentano la memoria stabilmente trattenuta.
+Il picco osservato non rappresenta il massimo assoluto.
+Il benchmark I/O usa batch controllati.
+Non dimostra assenza di perdite in saturazione continua.
+
+#### Configurazione diagnostica implementata
+
+- Switch persistente, default OFF.
+- Campionamento attivo previsto ogni 250 ms.
+- Campionamento idle previsto ogni 5 secondi.
+- PSS con intervallo minimo previsto di 2 secondi.
+- Storico RAM: massimo 512 campioni e 128 fasi concluse.
+- Massimo 64 fasi contemporaneamente attive.
+- Coda archivio limitata a 128 elementi.
+- Archivio privato CSV con limite 5 MiB.
+- Retention nominale 48 ore.
+- Manutenzione periodica ogni 15 minuti.
+- Reset limitato ai dati diagnostici.
+- Export dei record completi non scaduti.
+- Nessun nuovo GC forzato introdotto dal profiler.
+
+La retention effettiva puo essere inferiore a 48 ore
+per effetto del limite dimensionale.
+La cancellazione fisica dipende dalla manutenzione,
+dallo stato del processo e dalla disponibilita del filesystem.
+
+#### Limiti e rischi ancora aperti
+
+- Validazione scheduler, PSS, CPU, RAM e I/O su Android.
+- Verifica persistenza dello switch e comportamento della GUI.
+- Verifica visualizzazione percentuale del picco heap.
+- Verifica copertura completa delle fasi operative richieste.
+- Verifica reset ed export in presenza di errori Android.
+- Reset non persistente attraverso una terminazione del processo.
+- Possibile perdita di record e correlazioni con coda satura.
+- Verifica contatore record persi ed errori archivio.
+- Verifica recupero dopo terminazione reale del processo.
+- Verifica assenza di impatti sui dati Tandem.
+- Parita Kotlin/Python con fixture locale ancora da eseguire.
+- OOM TS-001 non risolto e non verificato.
+
+#### Roadmap operativa residua
+
+| Gate | Stato | Obiettivo |
+|---|---|---|
+| MEM-09 | DONE | Consolidamento documentale locale |
+| MEM-10 | PLANNED | Verifica APK e preparazione test Android |
+| MEM-11 | PLANNED | Validazione funzionale profiler su HONOR 9X |
+| MEM-12 | PLANNED | Baseline memoria con profiler OFF e ON |
+| R2 | IN_PROGRESS | Prototipo isolato architettura A/B |
+| R3 | PLANNED | Migrazione cache con recupero e rollback |
+| R4 | PLANNED | Integrazione A/B dopo superamento dei gate |
+| R5 | PLANNED | Parita dati, regressione e prestazioni |
+| R6 | PLANNED | Validazione dispositivo e download completo |
+| R7 | PLANNED | Consolidamento finale TS-001 |
+
+MEM-10 e MEM-11 richiedono verifica delle condizioni
+di installazione e autorizzazione esplicita prima
+di qualsiasi aggiornamento APK sul dispositivo.
+
+MEM-12 deve registrare almeno:
+
+- Heap Java utilizzato, committed e massimo.
+- Memoria nativa e PSS.
+- Baseline idle con profiler OFF e ON.
+- Caricamento cache e preparazione dashboard.
+- Autenticazione e download pump_logs.
+- Parsing, estrazione, merge e salvataggio.
+- Picchi campionati, durata e delta delle fasi.
+- Record diagnostici persi ed errori I/O.
+- Eventuali OOM, crash o anomalie funzionali.
+
+Non cancellare dati, cache o credenziali Tandem.
+Non trasferire payload sanitari o dati identificativi.
+Non incrementare la versione senza autorizzazione.
+
+L'architettura A/B rimane la soluzione pianificata
+per ridurre l'occupazione RAM della gestione dello storico.
+
+Il Memory Profiler e uno strumento di misura,
+non costituisce la risoluzione dell'OOM TS-001.
+
+
+### TS-001 - Consolidamento Crash Diagnostics MEM-11.2f
+
+Stato complessivo: IN_PROGRESS.
+Implementazione locale consolidata; validazione Android ancora necessaria.
+
+#### Contesto
+
+- MEM-11.2: FAIL sul dispositivo HONOR 9X STK-LX1, Android 10.
+- Heap growth limit: 384 MiB.
+- Processo terminato durante la verifica di startup.
+- OutOfMemoryError rilevato, stack trace utile non disponibile.
+- Picco Java osservato: 232590 KiB; non rappresenta il picco reale.
+- La causa applicativa precisa dell'OOM non e ancora dimostrata.
+- TS-001 rimane IN_PROGRESS.
+
+#### Implementazione Crash Diagnostics
+
+- Handler delle eccezioni Java non gestite.
+- Inizializzazione anticipata in MainActivity.
+- Delega all'handler precedente mediante finally.
+- Funzionamento indipendente dal Memory Profiler.
+- Ultima fase nota mediante whitelist.
+- Header con timestamp, fase, classe eccezione e heap Java.
+- Sincronizzazione del file prima dell'estrazione dello stack.
+- Stack frame con classe, metodo e numero di riga.
+- Nessuna registrazione dei messaggi delle eccezioni.
+- Nessuna registrazione dei nomi dei file sorgente.
+- Report privato latest_crash.txt.
+- Dimensione massima: 65536 byte.
+- Riserva heap best effort: 65536 byte.
+- Massimo 64 frame per causa e 4 cause.
+- Riserva di 256 byte per contatori e stato finale.
+- FRAMES_WRITTEN riferito ai frame effettivamente scritti.
+- RECORD_COMPLETE=NO per troncamenti rilevati.
+- Retention 48 ore, verificata all'inizializzazione e alla lettura.
+- Lettura limitata e sanitizzazione prima dell'esportazione.
+- Pulsante Export crash report in Memory Diagnostics.
+- Esportazione manuale mediante Storage Access Framework.
+- Nessun nuovo endpoint o telemetria.
+
+#### Difetto rilevato e corretto
+
+MEM-11.2f.4d: 102 PASS, 1 FAIL su 103 test.
+
+Il test writerRejectsMalformedFrames ha rilevato che un frame
+contenente newline interrompeva il ciclo, impedendo la
+registrazione dei successivi frame validi.
+
+Correzione MEM-11.2f.4d.2:
+
+- Controllo anticipato delle lunghezze e dei caratteri CR/LF.
+- Scarto del singolo frame non valido mediante continue.
+- Conservazione del break per il limite dimensionale.
+- Nessuna modifica dei criteri di accettazione.
+
+MEM-11.2f.4d.3: difetto risolto nei test JVM.
+
+#### Evidenze di verifica
+
+| Suite | Test | PASS | FAIL | ERROR | SKIP |
+|---|---:|---:|---:|---:|---:|
+| StartupMemoryProfilerTest | 27 | 27 | 0 | 0 | 0 |
+| MemoryDiagnosticsStoreTest | 46 | 46 | 0 | 0 | 0 |
+| CrashDiagnosticsTest | 18 | 18 | 0 | 0 | 0 |
+| CrashDiagnosticsWriterTest | 12 | 12 | 0 | 0 | 0 |
+| Totale | 103 | 103 | 0 | 0 | 0 |
+
+- Build debug offline: PASS dopo l'ultima modifica applicativa.
+- Diff check: PASS.
+- Working tree check: PASS.
+- Test writer con OOM sintetico: PASS.
+- OOM con heap realmente esaurito: NOT_EXECUTED.
+- Validazione GUI Android: NOT_EXECUTED.
+- APK aggiornato non ancora installato.
+- Nessun incremento versione, commit o push.
+
+#### Rischi residui e limiti
+
+- La diagnostica fatal e best effort.
+- Il rilascio della riserva heap non garantisce memoria disponibile.
+- L'estrazione dello stack trace puo richiedere ulteriori allocazioni.
+- La fase globale rappresenta l'ultima fase nota, non necessariamente
+  quella del thread responsabile del crash.
+- Crash nativi, terminazioni LMK ed eccezioni intercettate
+  dall'applicazione non sono necessariamente registrati.
+- La delega all'handler Android originale non e verificata sul device.
+- Crash concorrenti possono interrompere la scrittura del report.
+- I controlli sintattici non garantiscono la provenienza degli
+  identificativi degli stack frame.
+- La retention non garantisce cancellazione esattamente alla scadenza
+  se l'applicazione non e in esecuzione.
+- L'esportazione GUI deve essere verificata sul dispositivo.
+- Il report non costituisce una soluzione dell'OOM originale.
+
+#### Roadmap operativa MEM-11.2f
+
+| Checkpoint | Attivita | Stato |
+|---|---|---|
+| MEM-11.2f.1 | Crash handler | DONE |
+| MEM-11.2f.2 | Startup e copertura fasi | DONE |
+| MEM-11.2f.3 | Retention, lettura, sanitizzazione, GUI | DONE |
+| MEM-11.2f.4a | Verifica sorgenti | VERIFIED |
+| MEM-11.2f.4b | Formattazione | VERIFIED |
+| MEM-11.2f.4c | Writer e contatori | VERIFIED |
+| MEM-11.2f.4d.1 | Analisi difetto writer | VERIFIED |
+| MEM-11.2f.4d.2 | Correzione difetto writer | VERIFIED |
+| MEM-11.2f.4d.3 | Regressione 103 test JVM | VERIFIED |
+| MEM-11.2f.4e | Consolidamento documentazione locale | DONE |
+| MEM-11.2f.5a | Build e verifica APK | PLANNED |
+| MEM-11.2f.5b | Installazione previa autorizzazione | PLANNED |
+| MEM-11.2f.5c | Riproduzione startup e acquisizione crash | PLANNED |
+| MEM-11.2f.5d | Analisi stack e validazione diagnostica | PLANNED |
+
+#### Gate successivi
+
+1. Build offline e verifica APK, versione, package, firma e SHA256.
+2. Autorizzazione esplicita prima dell'installazione.
+3. Aggiornamento conservativo senza cancellazione dati.
+4. Riproduzione del problema e acquisizione della sola diagnostica.
+5. Verifica dello stack trace, se disponibile.
+6. Aggiornamento evidenze e decisione sulla prosecuzione.
+
+La roadmap A/B resta distinta dalla diagnostica.
+R2 rimane IN_PROGRESS; R3-R7 non risultano completati.
+MEM-12 resta BLOCKED fino al superamento del gate startup.
+Nessuna dichiarazione di risoluzione TS-001 prima della
+validazione funzionale e della memoria sul dispositivo.
+
+### TS-001 - Evidenze Android MEM-11.2f.6
+
+Data: 2026-11-24.
+Stato TS-001: IN_PROGRESS.
+
+#### Installazione e verifica APK
+
+- Build debug offline: PASS.
+- Test diagnostici JVM: 103/103 PASS.
+- Package: com.example.tandemapp.st.dev.
+- VersionName: 26.11.002, invariata.
+- VersionCode: 2611002, invariato.
+- APK: TandemSourceRT.apk.
+- Dimensione: 23825552 byte.
+- SHA256: 34CDC30F873501CA07C4DCBB1BC22F540E4B82A49E9D6F98934808206F383145.
+- Firma Android Debug: verificata e compatibile.
+- Installazione tramite adb install -r: PASS.
+- SHA256 APK installato: corrispondente.
+- FirstInstallTime invariato.
+- Nessuna disinstallazione o cancellazione intenzionale dei dati.
+- Integrita completa dei dati applicativi non verificata.
+
+#### Problemi operativi risolti
+
+- Identificazione APK mediante output-metadata.json.
+- Parser certificati compatibile con Build Tools 37.0.0.
+- Connessione ADB ripristinata mediante riavvio del server.
+- Nessuna modifica ai driver Windows.
+
+#### Evidenze sul dispositivo reale
+
+Dispositivo: HONOR 9X, STK-LX1, Android 10.
+
+- Avvio controllato: processo inizialmente stabile per 90 secondi.
+- Nessun riavvio osservato durante il monitoraggio.
+- Successiva terminazione del processo.
+- Crash report persistente recuperato dopo la terminazione.
+- Tempo dal lancio al crash: circa 140.56 secondi.
+- Dimensione report: 584 byte.
+- Report completo: RECORD_COMPLETE=YES.
+- Ultima fase registrata: json_parse.
+- Eccezione: java.util.concurrent.TimeoutException.
+- Java used: 402629840 byte.
+- Java committed: 402653184 byte.
+- Java max: 402653184 byte.
+- Margine heap residuo: 23344 byte.
+- Occupazione heap: circa 99.994 percento.
+- Stack frame acquisiti: 7/7.
+- Righe diagnostiche accettate: 19/19.
+- Righe escluse dal filtro: 0.
+
+Stack trace:
+
+    java.lang.Object.wait:-2
+    java.lang.Object.wait:442
+    java.lang.ref.ReferenceQueue.remove:190
+    java.lang.ref.ReferenceQueue.remove:211
+    java.lang.Daemons$FinalizerDaemon.runInternal:271
+    java.lang.Daemons$Daemon.run:137
+    java.lang.Thread.run:929
+
+#### Interpretazione e limiti
+
+VERIFIED:
+
+- Saturazione quasi totale dell'heap Java.
+- Registrazione persistente di un crash reale.
+- Recupero del report dopo terminazione del processo.
+- Acquisizione di eccezione, stack trace, fase e memoria.
+- Nessun payload sanitario presente nel report acquisito.
+
+NON DIMOSTRATO:
+
+- Relazione causale diretta tra saturazione heap e TimeoutException.
+- Allocazione applicativa esatta responsabile della saturazione.
+- Corrispondenza tra ultima fase globale e thread terminato.
+- Risoluzione dell'OOM originale.
+- Funzionalita completa della GUI.
+- Corretto funzionamento del Memory Profiler su Android.
+- Affidabilita del crash handler in ogni condizione OOM.
+- Integrita completa dei dati dopo aggiornamento APK.
+
+La TimeoutException non deve essere classificata come
+OutOfMemoryError. La saturazione dell'heap e' invece misurata
+direttamente e costituisce una criticita verificata.
+
+L'ultima fase json_parse e' un indicatore diagnostico globale,
+non una prova che il thread terminato stesse eseguendo il parser.
+
+#### Decisione operativa
+
+Sospendere ulteriori riproduzioni del crash con l'architettura
+corrente. Conservare cache e report diagnostico esistenti.
+
+Dare priorita alla revisione delle allocazioni JSON e al
+prototipo isolato A/B prima di ulteriori integrazioni.
+
+Non utilizzare System.gc(), Thread.sleep() o aumento del limite
+heap come soluzione architetturale alla saturazione.
+
+#### Roadmap consolidata
+
+Questo aggiornamento prevale sui precedenti stati dei
+checkpoint qui elencati.
+
+| Checkpoint | Stato | Evidenza o prossima attivita |
+|---|---|---|
+| MEM-11.2f.5a | VERIFIED | APK, firma e compatibilita |
+| MEM-11.2f.5b | VERIFIED | Installazione conservativa |
+| MEM-11.2f.5c | VERIFIED | Processo stabile nei primi 90 s |
+| MEM-11.2f.5d | BLOCKED | Baseline memoria non acquisita |
+| MEM-11.2f.5d.1 | VERIFIED | Report crash reale completo |
+| MEM-11.2f.6 | DONE | Consolidamento evidenze Android |
+| MEM-12 | BLOCKED | Riprendere dopo stabilizzazione |
+| R2 | IN_PROGRESS | Revisione allocazioni e prototipo A/B |
+| R3 | PLANNED | Migrazione conservativa |
+| R4 | PLANNED | Integrazione architettura A/B |
+| R5 | PLANNED | Integrita, parita e prestazioni |
+| R6 | PLANNED | Verifica dispositivo reale |
+| R7 | PLANNED | Consolidamento finale |
+
+#### R2 - Prossime attivita prioritarie
+
+1. Inventario delle allocazioni nel percorso json_parse.
+2. Identificazione delle strutture residenti e temporanee.
+3. Verifica delle copie complete e dei riferimenti trattenuti.
+4. Revisione del prototipo A/B gia disponibile.
+5. Parsing streaming con memoria limitata.
+6. Scrittura progressiva nello slot inattivo.
+7. Validazione completa prima del cambio generazione.
+8. Test sintetici di integrita, memoria e interruzione.
+9. Misurazione del picco durante aggiornamento e memoria a regime.
+
+Obiettivi sperimentali, non ancora verificati:
+
+- Heap Java a regime inferiore a 40 MiB.
+- Picco heap durante aggiornamento inferiore a 120 MiB.
+- Ultimi tre giorni elaborati residenti in RAM.
+- Storico precedente disponibile su disco.
+- Conservazione completa della retention configurata.
+- Nessuna perdita di originali, indici o metadati Tandem.
+- Nessuna pubblicazione di generazioni incomplete.
+
+R3 e R4 restano subordinati alla validazione del prototipo R2.
+TS-001 rimane IN_PROGRESS.
+
+### TS-001 - Consolidamento prototipo R2.3.2
+
+Data: 2026-11-24.
+
+Stato TS-001: IN_PROGRESS.
+Stato R2: IN_PROGRESS.
+
+Questa sezione consolida le evidenze successive a MEM-11.2f.6.
+Per i checkpoint R2 riportati prevale sulle precedenti indicazioni
+di stato. Non modifica i requisiti approvati.
+
+#### R2.1 - Analisi allocazioni
+
+Stato: DONE.
+
+- Il percorso operativo legge direttamente lo stream HTTP.
+- Il parser operativo materializza comunque l'intero albero JSON.
+- PumpEventsSource conserva il payload originale materializzato.
+- Il dataset precedente e quello in aggiornamento possono
+  coesistere in memoria.
+- Ordinamento, DTO, raggruppamenti, merge e retention producono
+  ulteriori strutture e allocazioni.
+- La cache attuale conserva il dataset elaborato e le sorgenti.
+- Non sono disponibili misure affidabili per attribuire una
+  quantita precisa di heap a ogni struttura.
+- Il crash durante json_parse non dimostra da solo quale
+  allocazione abbia causato il problema.
+
+#### R2.2 - Revisione implementazione esistente
+
+Stato: DONE.
+
+- Verificato il precedente decoder streaming.
+- Verificati i test della cache e della sostituzione atomica.
+- Non individuato un gestore completo di generazioni A/B
+  nell'implementazione applicativa esaminata.
+- Lo store diagnostico non costituisce uno storico A/B.
+
+#### R2.3.1 - Archivio payload originali
+
+Stato: VERIFIED.
+
+Sorgente: PumpPayloadArchive.kt.
+Test: PumpPayloadArchiveTest.kt.
+
+- Copia progressiva con buffer da 64 KiB.
+- SHA-256 calcolato incrementalmente.
+- Limite dimensionale esplicito.
+- Rifiuto di input vuoto e letture senza avanzamento.
+- File temporaneo nella directory di destinazione.
+- Flush e sincronizzazione prima della sostituzione.
+- Sostituzione atomica del file di destinazione.
+- Conservazione del file precedente in caso di errore
+  prima della sostituzione.
+- Il chiamante mantiene la responsabilita dello stream.
+- Fedelta dei byte verificata con dati sintetici.
+- Sorgente sintetica da 32 MiB verificata.
+
+Evidenza: 11/11 test superati.
+
+La validazione JSON e la durabilita della directory dopo
+perdita di alimentazione non sono dimostrate.
+L'archivio non costituisce ancora una generazione A/B valida.
+
+#### R2.3.2 - Parser incrementale
+
+Stato: VERIFIED per il prototipo isolato.
+
+Sorgente: PumpPayloadStreamParser.kt.
+Test: PumpPayloadStreamParserTest.kt.
+
+- R2.3.2a: callback incrementale per singolo evento.
+- R2.3.2b.1: limite lessicale prima della materializzazione
+  di token eccessivamente grandi.
+- R2.3.2b.2: limiti numero e dimensione nomi top-level.
+- R2.3.2b.3a: eliminazione array UTF-8 temporanei.
+- R2.3.2b.3b: eliminazione serializzazione temporanea
+  completa del singolo elemento.
+
+Tutti i checkpoint sopra indicati: VERIFIED.
+
+Proprieta verificate:
+
+- Decodifica UTF-8 con rifiuto sequenze malformate.
+- Parsing JSON strict.
+- Conservazione ordine originale eventi.
+- Indice originale progressivo Long.
+- Conservazione campi sconosciuti nel singolo elemento.
+- Callback separata per metadati top-level.
+- Rifiuto membri duplicati.
+- Rifiuto documenti troncati o con contenuto successivo.
+- Limiti espliciti di profondita, nodi e dimensioni.
+- Conteggio UTF-8 senza array temporaneo.
+- Conteggio dimensione serializzata senza String completa.
+- Nessuna conservazione dell'intero array events nel parser.
+
+Limiti predefiniti sperimentali:
+
+- Profondita massima: 64.
+- Dimensione massima elemento: 1 MiB.
+- Nodi massimi per elemento: 16384.
+- Membri top-level massimi: 256.
+- Budget nomi top-level: 64 KiB.
+
+Il superamento dei limiti deve invalidare la generazione
+candidata senza troncare o perdere silenziosamente dati.
+
+I limiti devono essere verificati rispetto alla compatibilita
+dei payload prima dell'integrazione operativa.
+
+Le callback sono provvisorie fino alla validazione completa
+del documento. Nessuna callback autorizza da sola il commit
+di una generazione.
+
+Il payload originale archiviato rimane la sorgente autorevole.
+
+Evidenza: 52/52 test parser superati.
+
+#### R2.3.2b.4a - Benchmark ordinario
+
+Stato: VERIFIED.
+
+Sorgente: PumpPayloadStreamBenchmarkTest.kt.
+
+| Eventi | Payload byte | Esito |
+| ---: | ---: | --- |
+| 2000 | 403856 | PASS |
+| 20000 | 4077856 | PASS |
+| 100000 | 20477856 | PASS |
+| 1000000 | 206777856 | PASS |
+
+Regressione mirata: 68/68 test superati.
+Heap massimo JVM: 512 MiB.
+
+Scenario da un milione di eventi:
+
+- Tempo: 1886.5045 ms.
+- Throughput: 530080.90 eventi/s.
+- Picco heap osservato: 326934200 byte.
+
+Il benchmark ordinario condivide la JVM tra i test.
+Le condizioni iniziali non sono uniformi.
+Il picco comprende oggetti non ancora recuperati dal GC.
+
+Il primo errore di estrazione XML non era un errore del parser.
+Recupero metriche e ripristino benchmark completati.
+
+#### R2.3.2b.4b - Benchmark con heap limitato
+
+Stato: VERIFIED.
+
+Quattro esecuzioni indipendenti della JVM di test.
+
+Ogni scenario elabora:
+
+- 1000000 eventi sintetici.
+- 206777856 byte di payload.
+- 3 membri metadata.
+- Checksum indici: 499999500000.
+
+| Heap massimo MiB | Heap iniziale MiB | Picco MiB | Heap finale MiB | Tempo ms | Eventi/s | Esito |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 384 | 36.27 | 52.44 | 16.83 | 2210.7885 | 452327 | PASS |
+| 128 | 15.64 | 31.53 | 11.22 | 2217.8426 | 450889 | PASS |
+| 64 | 17.78 | 22.97 | 8.78 | 2360.0053 | 423728 | PASS |
+| 32 | 12.02 | 19.99 | 15.03 | 2372.7817 | 421446 | PASS |
+
+Picchi osservati in byte:
+
+- 384 MiB: 54988536.
+- 128 MiB: 33063864.
+- 64 MiB: 24086160.
+- 32 MiB: 20959912.
+
+Tutti i limiti effettivi della JVM sono stati verificati.
+Quattro scenari eseguiti e quattro superati.
+
+Ordine, indici, conteggi e checksum verificati.
+Nessun evento perso nei controlli effettuati.
+
+Il throughput a 32 MiB diminuisce di circa il 6.83%
+rispetto allo scenario a 384 MiB.
+
+Il minimo limite verificato e 32 MiB.
+Non rappresenta il minimo limite teoricamente possibile.
+
+Il limite riguarda l'intera JVM desktop di test.
+Non rappresenta una misura del solo parser o dell'app Android.
+
+La generazione del payload precede la misura del parsing.
+Il picco campionato non rappresenta necessariamente
+il picco assoluto.
+
+Il benchmark non include estrazione dataset completo,
+ordinamento, indicizzazione, archivio A/B o GUI.
+
+I metadati sono verificati per conteggio e ordine dei nomi.
+Non costituisce una prova completa di parita semantica.
+
+Nessun GC forzato introdotto nel benchmark.
+Configurazione Gradle temporanea rimossa.
+Nessuna modifica permanente alla configurazione Gradle.
+
+#### R2.3.2b.4c - Consolidamento e regressione
+
+Stato: VERIFIED.
+
+Regressione completa del 2026-11-24:
+
+- Classi test: 19.
+- Test complessivi: 250.
+- Test superati: 249.
+- Failure: 0.
+- Error: 0.
+- Skip: 1.
+- Esito: PASS_WITH_KNOWN_SKIP.
+- Build debug offline: PASS.
+- Integrita hash checkpoint precedenti: PASS.
+- Working tree invariato durante i test: PASS.
+
+Lo skip noto riguarda PumpEventsAdapterParityTest:
+Kotlin adapter matches Python adapter on local pump event fixture.
+
+La parita coperta da tale test non risulta verificata.
+
+R2.3.2b.4c.1: VERIFIED.
+
+Il controllo BOM precedente ha prodotto un falso positivo
+per confronto Unicode dipendente dalla cultura.
+
+Verificato TODO UTF-8 senza BOM, EOL LF e terminatore
+finale LF singolo. Nessuna conversione di codifica.
+
+R2.3.2b.4c.2: DONE.
+
+Aggiornamento documentale con conservazione dei byte
+originali e verifica dei report della regressione precedente.
+
+Nessuna ripetizione non necessaria dei test.
+Nessuna nuova installazione APK.
+Nessuna modifica del percorso operativo.
+Nessun incremento versione.
+Nessun accesso intenzionale ai dati applicativi.
+Nessun commit o push.
+
+#### Roadmap R2 consolidata
+
+| Checkpoint | Attivita | Stato |
+| --- | --- | --- |
+| R2.1 | Analisi allocazioni | DONE |
+| R2.2 | Revisione implementazione esistente | DONE |
+| R2.3.1 | Archivio payload originali | VERIFIED |
+| R2.3.2a | Parser incrementale | VERIFIED |
+| R2.3.2b.1 | Protezione token | VERIFIED |
+| R2.3.2b.2 | Protezione metadati | VERIFIED |
+| R2.3.2b.3a | Eliminazione array temporanei | VERIFIED |
+| R2.3.2b.3b | Eliminazione String temporanea | VERIFIED |
+| R2.3.2b.4a | Benchmark ordinario | VERIFIED |
+| R2.3.2b.4b | Benchmark heap limitato | VERIFIED |
+| R2.3.2b.4c | Consolidamento e regressione | VERIFIED |
+| R2.3.3 | Indicizzazione su disco | PLANNED |
+| R2.3.4 | Elaborazione dataset a memoria limitata | PLANNED |
+| R2.3.5 | Gestore generazioni A/B | PLANNED |
+| R2.3.6 | Recupero dopo interruzione | PLANNED |
+| R2.3.7 | Accesso storico e finestra RAM | PLANNED |
+| R2.3.8 | Benchmark integrato e regressione | PLANNED |
+| R2.4 | Validazione complessiva prototipo | PLANNED |
+
+#### R2.3.3 - Indicizzazione su disco
+
+Stato: PLANNED.
+
+| Checkpoint | Attivita | Stato |
+| --- | --- | --- |
+| R2.3.3a | Formato e contratto indici | PLANNED |
+| R2.3.3b | Scrittura incrementale | PLANNED |
+| R2.3.3c | Lettura puntuale | PLANNED |
+| R2.3.3d | Provenienza payload verificabile | PLANNED |
+| R2.3.3e | Integrita e interruzioni | PLANNED |
+| R2.3.3f | Benchmark memoria e prestazioni | PLANNED |
+| R2.3.3g | Regressione e consolidamento | PLANNED |
+
+Prossimo checkpoint: R2.3.3a.
+
+Prima dell'implementazione definire formato, contratto
+di scrittura, lettura, validazione e gestione errori.
+
+Requisiti:
+
+- Scrittura progressiva degli indici.
+- Nessuna lista completa degli indici residente in RAM.
+- Conservazione eventIndex originale senza rinumerazione.
+- Identificazione verificabile del payload di provenienza.
+- Associazione coerente con payloadIndex.
+- Conservazione metadati temporali originali.
+- Conservazione sequenceNumber e sequenceGroup.
+- Conservazione deviceAssignmentId e clockChanges.
+- Conservazione molteplicita CGM.
+- Distinzione dato originale, normalizzato e visualizzato.
+- Accesso puntuale agli eventi originali verificabile.
+- Rifiuto indici non validi, incompleti o incoerenti.
+- Nessuna pubblicazione di indici provvisori.
+- Nessuna modifica cache operativa durante il prototipo.
+- Nessuna dipendenza da dati sanitari reali per i test.
+
+Gli offset, se utilizzati, devono riferirsi ai byte del
+payload originale, non ai caratteri decodificati o al
+read-ahead del parser.
+
+Il formato definitivo non e ancora approvato.
+
+Non assumere che un indice posizionale sia sufficiente
+per ordinamento temporale e raggruppamenti semantici.
+
+#### Rischi residui e verifiche obbligatorie
+
+- Payload con eventi o metadati oltre i limiti sperimentali.
+- Errori di indicizzazione e associazione alla sorgente.
+- Perdita campi sconosciuti o molteplicita CGM.
+- Alterazione ordinamento stabile originale.
+- Raggruppamenti bolus distribuiti lungo lo storico.
+- Stato basal e suspend/resume tra eventi distanti.
+- Clock changes e discontinuita temporali.
+- Coesistenza generazioni attiva e candidata.
+- Spazio disco per archivio, indici e dataset.
+- Interruzioni durante scrittura, validazione e pubblicazione.
+- Lettori concorrenti durante il cambio generazione.
+- Durabilita manifest e recupero dopo crash.
+- Migrazione senza perdita della cache precedente.
+- Retention AppConfig.HISTORY_DAYS indipendente dalla RAM.
+- Accesso storico oltre i tre giorni residenti.
+- Overhead complessivo memoria, CPU e I/O su Android.
+- Integrita e parita del dataset elaborato.
+- Verifica Android del problema OOM originale.
+
+Obiettivi applicativi sperimentali invariati:
+
+- Heap Java stabile inferiore a 40 MiB.
+- Picco aggiornamento inferiore a 120 MiB.
+
+Nessuno dei due obiettivi e ancora verificato sull'app.
+
+#### Stato roadmap generale TS-001
+
+| Fase | Stato |
+| --- | --- |
+| R2 - Prototipo isolato | IN_PROGRESS |
+| R3 - Migrazione cache | PLANNED |
+| R4 - Integrazione operativa | PLANNED |
+| R5 - Parita e prestazioni | PLANNED |
+| R6 - Validazione Android | PLANNED |
+| R7 - Consolidamento finale | PLANNED |
+| MEM-12 - Baseline applicativa | BLOCKED |
+
+La risoluzione del crash Android non e ancora verificata.
+
+Il report MEM-11.2f.6 rimane evidenza del problema originale.
+Non ripetere il crash senza una nuova motivazione tecnica.
+Non cancellare cache o dati applicativi per aggirare il problema.
+
+Il prototipo resta separato dal percorso operativo fino
+al completamento dei gate di compatibilita e integrita.
