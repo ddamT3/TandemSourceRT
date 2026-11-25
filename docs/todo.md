@@ -1240,3 +1240,28 @@ pubblicazione, errori e limiti aggregati. Nessun sorgente modificato.
   descrittore e accesso selettivo con dimensioni crescenti, heap e tempi;
   verificare integrita e memoria senza dati reali. Nessuna conclusione
   Android o integrazione applicativa dai soli test unitari.
+
+#### MEM-14.3b.3a - VERIFIED benchmark descrittore
+
+Output locale utente: 12/12 configurazioni PASS, integrita PASS,
+cleanup PASS, nessun dato reale o modifica dispositivo.
+Primo tentativo interrotto dal controllo XML PowerShell dopo test PASS;
+lettura InnerText corretta nello script successivo.
+Payload sintetici 10000/100000/1000000 eventi, rispettivamente
+2027856/20477856/206777856 byte. Heap JVM 384/128/64/32 MiB.
+Picchi osservati describe/readEvent (byte), ordine heap decrescente:
+- 10000: 41517816/77646488; 38515160/74342504;
+  40097720/42900312; 21913000/25825752.
+- 100000: 246978248/245921224; 86033536/86169984;
+  47238888/47358784; 27204224/27637408.
+- 1000000: 248596080/248708184; 87129424/87250720;
+  47210688/47337152; 27596144/27731144.
+Tempi 1M describe/readEvent ms: 2221.3885/1954.8112;
+2259.295/1966.8499; 2335.1156/2020.8222; 2382.7478/2079.467.
+Picchi campionati intera JVM, non live set o limite assoluto;
+generazione sintetica prima delle misure, nessun GC forzato.
+Accesso singolo con scansione completa; non dimostrata parita
+applicativa, memoria aggregata, migrazione o comportamento Android.
+Due warning nullable nel benchmark da correggere prima consolidamento.
+Prossimo: contratto migrazione streaming e pubblicazione recuperabile,
+verifica test esistenti, limiti aggregati e regressione sintetica.
