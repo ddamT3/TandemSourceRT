@@ -119,10 +119,14 @@ class PumpPayloadDescriptorTest {
 		write()
 		val descriptor = describe()
 		rejects<IOException> {
-			PumpPayloadAccess.readEvent(folder.root, descriptor.copy(eventCount = 4), 0)
+			PumpPayloadAccess.readEvent(folder.root, PumpPayloadDescriptor.create(descriptor.requestedAssignmentId,
+				descriptor.archiveReference, descriptor.clockChanges, 4,
+				descriptor.archiveBytes, descriptor.sha256), 0)
 		}
 		rejects<IOException> {
-			PumpPayloadAccess.readEvent(folder.root, descriptor.copy(clockChanges = null), 0)
+			PumpPayloadAccess.readEvent(folder.root, PumpPayloadDescriptor.create(descriptor.requestedAssignmentId,
+				descriptor.archiveReference, null, descriptor.eventCount,
+				descriptor.archiveBytes, descriptor.sha256), 0)
 		}
 	}
 }
