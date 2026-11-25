@@ -93,10 +93,12 @@ internal class MemoryDiagnosticsStore(filesDir: File) {
 
     fun append(kind: Kind, elapsedMs: Long, used: Long, committed: Long,
                maximum: Long, native: Long, pss: Int?, phaseId: Long? = null, durationMs: Long? = null,
-               startBytes: Long? = null, peakBytes: Long? = null, phaseName: String? = null) {
+               startBytes: Long? = null, peakBytes: Long? = null, phaseName: String? = null,
+               deviceTotal: Long? = null, deviceAvailable: Long? = null,
+               deviceThreshold: Long? = null, deviceLowMemory: Boolean? = null) {
         val wall = System.currentTimeMillis()
         val safeName = phaseName?.take(64)?.replace(Regex("[^A-Za-z0-9_.-]"), "_") ?: ""
-        val row = "$wall,$elapsedMs,${kind.name},$used,$committed,$maximum,$native,${pss ?: ""},${phaseId ?: ""},${durationMs ?: ""},${startBytes ?: ""},${peakBytes ?: ""},$session,$safeName\n"
+        val row = "$wall,$elapsedMs,${kind.name},$used,$committed,$maximum,$native,${pss ?: ""},${phaseId ?: ""},${durationMs ?: ""},${startBytes ?: ""},${peakBytes ?: ""},$session,$safeName,${deviceTotal ?: ""},${deviceAvailable ?: ""},${deviceThreshold ?: ""},${deviceLowMemory ?: ""}\n"
         synchronized(submissionLock) {
             val submittedGeneration = generation.get()
             worker.execute {
@@ -253,14 +255,17 @@ internal class MemoryDiagnosticsStore(filesDir: File) {
         for (file in files()) {
             forEachCompleteLine(file) { line ->
                 val fields = line.split(',')
-                if (fields.size == 14 &&
+                if ((fields.size == 14 || (fields.size == 18 &&
+                    fields.subList(14, 17).all { it.isEmpty() || it.toLongOrNull()?.let { n -> n >= 0 } == true } &&
+                    fields[17] in listOf("", "true", "false"))) &&
                     fields[0].toLongOrNull()?.let { it >= cutoff } == true &&
                     Kind.values().any { it.name == fields[2] } &&
                     fields[1].toLongOrNull() != null &&
                     fields.subList(3, 7).all { it.toLongOrNull() != null } &&
                     (fields[7].isEmpty() || fields[7].toIntOrNull() != null) &&
                     fields.subList(8, 12).all { it.isEmpty() || it.toLongOrNull() != null }) {
-                    output.write((line + "\n").toByteArray(Charsets.UTF_8))
+                    val normalized = if (fields.size == 14) line + ",,,," else line
+                    output.write((normalized + "\n").toByteArray(Charsets.UTF_8))
                 }
             }
         }
@@ -389,6 +394,6 @@ internal class MemoryDiagnosticsStore(filesDir: File) {
         private const val BUCKET_MS = 60_000L
         private const val RETENTION_MS = 48L * 60 * 60 * 1000
         private const val LIMIT_BYTES = 5L * 1024 * 1024
-        private const val HEADER = "wall_ms,elapsed_ms,kind,used_bytes,committed_bytes,max_bytes,native_bytes,pss_kib,phase_id,duration_ms,start_bytes,peak_bytes,session,phase_name\n"
+        private const val HEADER = "wall_ms,elapsed_ms,kind,used_bytes,committed_bytes,max_bytes,native_bytes,pss_kib,phase_id,duration_ms,start_bytes,peak_bytes,session,phase_name,device_total_bytes,device_available_bytes,device_threshold_bytes,device_low_memory\n"
     }
 }
