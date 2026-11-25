@@ -18,12 +18,15 @@ internal object LegacyCacheExtractor {
 		val maxDatasetBytes: Long = 32L * 1024 * 1024,
 		val maxOutputBytes: Long = 512L * 1024 * 1024,
 		val reserveDiskBytes: Long = 16L * 1024 * 1024,
-		val maxRetainedMetadataBytes: Long = 4L * 1024 * 1024
+		val maxRetainedMetadataBytes: Long = 4L * 1024 * 1024,
+		val maxDatasetNodes: Int = 500000,
+		val maxCgmPoints: Int = 100000
 	) {
 		init {
 			require(maxInputBytes > 0 && maxPayloadBytes > 0)
 			require(maxDatasetBytes > 0 && maxOutputBytes > 0 && reserveDiskBytes >= 0)
 			require(maxRetainedMetadataBytes > 0)
+			require(maxDatasetNodes > 0 && maxCgmPoints in 1..100000)
 			require(maxSources in 1..128 && maxTokenChars in 1..1024 * 1024)
 		}
 	}
@@ -39,6 +42,8 @@ internal object LegacyCacheExtractor {
 			val descriptors = mutableListOf<PumpPayloadDescriptor>()
 			val budget = OutputBudget(destination, limits)
 			var metadataRemaining = limits.maxRetainedMetadataBytes
+			val datasetBudget = NodeBudget(limits.maxDatasetNodes)
+			datasetBudget.consume() // Envelope object.
 			source.inputStream().use { input ->
 				val bounded = object : java.io.FilterInputStream(input) {
 					var remaining = size
@@ -68,6 +73,7 @@ internal object LegacyCacheExtractor {
 						when (name) {
 							"dataset" -> {
 								datasetSeen = true
+								datasetBudget.consume()
 								writer.beginObject()
 								objectMembers(reader) { member ->
 									if (member == "pumpEventsSources") {
@@ -90,7 +96,11 @@ internal object LegacyCacheExtractor {
 										reader.endArray()
 									} else {
 										writer.name(member)
-										copyValue(reader, writer, 1)
+										if (member == "cgm") {
+											copyCgm(reader, writer, datasetBudget, limits.maxCgmPoints)
+										} else {
+											copyValue(reader, writer, 1, datasetBudget)
+										}
 									}
 								}
 								writer.endObject()
@@ -98,9 +108,10 @@ internal object LegacyCacheExtractor {
 							"latestTimestamp" -> {
 								if (reader.peek() != JsonToken.STRING) throw IOException("Invalid timestamp")
 								timestampSeen = true
+								datasetBudget.consume()
 								writer.value(reader.nextString())
 							}
-							else -> copyValue(reader, writer, 1)
+							else -> copyValue(reader, writer, 1, datasetBudget)
 						}
 					}
 					writer.endObject()
@@ -200,21 +211,45 @@ internal object LegacyCacheExtractor {
 		reader.endObject()
 	}
 
-	private fun copyValue(reader: JsonReader, writer: JsonWriter, depth: Int) {
+	private class NodeBudget(private var remaining: Int) {
+		fun consume() {
+			if (remaining == 0) throw IOException("Dataset node limit exceeded")
+			remaining--
+		}
+	}
+
+	private fun copyCgm(reader: JsonReader, writer: JsonWriter, budget: NodeBudget, maxPoints: Int) {
+		if (reader.peek() != JsonToken.BEGIN_ARRAY) throw IOException("Invalid CGM array")
+		budget.consume()
+		reader.beginArray()
+		writer.beginArray()
+		var count = 0
+		while (reader.hasNext()) {
+			if (count >= maxPoints) throw IOException("CGM point limit exceeded")
+			if (reader.peek() != JsonToken.BEGIN_OBJECT) throw IOException("Invalid CGM point")
+			copyValue(reader, writer, 2, budget)
+			count++
+		}
+		reader.endArray()
+		writer.endArray()
+	}
+
+	private fun copyValue(reader: JsonReader, writer: JsonWriter, depth: Int, budget: NodeBudget? = null) {
+		budget?.consume()
 		if (depth > 64) throw IOException("Legacy depth limit exceeded")
 		when (reader.peek()) {
 			JsonToken.BEGIN_OBJECT -> {
 				writer.beginObject()
 				objectMembers(reader) { name ->
 					writer.name(name)
-					copyValue(reader, writer, depth + 1)
+					copyValue(reader, writer, depth + 1, budget)
 				}
 				writer.endObject()
 			}
 			JsonToken.BEGIN_ARRAY -> {
 				reader.beginArray()
 				writer.beginArray()
-				while (reader.hasNext()) copyValue(reader, writer, depth + 1)
+				while (reader.hasNext()) copyValue(reader, writer, depth + 1, budget)
 				reader.endArray()
 				writer.endArray()
 			}
