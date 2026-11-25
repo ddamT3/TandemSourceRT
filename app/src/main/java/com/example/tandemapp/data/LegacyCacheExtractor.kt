@@ -14,10 +14,14 @@ internal object LegacyCacheExtractor {
 		val maxInputBytes: Long = 512L * 1024 * 1024,
 		val maxPayloadBytes: Long = 256L * 1024 * 1024,
 		val maxSources: Int = 128,
-		val maxTokenChars: Int = 1024 * 1024
+		val maxTokenChars: Int = 1024 * 1024,
+		val maxDatasetBytes: Long = 32L * 1024 * 1024,
+		val maxOutputBytes: Long = 512L * 1024 * 1024,
+		val reserveDiskBytes: Long = 16L * 1024 * 1024
 	) {
 		init {
 			require(maxInputBytes > 0 && maxPayloadBytes > 0)
+			require(maxDatasetBytes > 0 && maxOutputBytes > 0 && reserveDiskBytes >= 0)
 			require(maxSources in 1..128 && maxTokenChars in 1..1024 * 1024)
 		}
 	}
@@ -31,6 +35,7 @@ internal object LegacyCacheExtractor {
 		var complete = false
 		try {
 			val descriptors = mutableListOf<PumpPayloadDescriptor>()
+			val budget = OutputBudget(destination, limits)
 			source.inputStream().use { input ->
 				val bounded = object : java.io.FilterInputStream(input) {
 					var remaining = size
@@ -51,7 +56,7 @@ internal object LegacyCacheExtractor {
 				val reader = JsonReader(PumpPayloadStreamParser.BoundedJsonReader(
 					InputStreamReader(bounded, decoder), limits.maxTokenChars))
 				reader.isLenient = false
-				writeJson(File(destination, "dataset.json")) { writer ->
+				writeJson(File(destination, "dataset.json"), limits.maxDatasetBytes, budget) { writer ->
 					var datasetSeen = false
 					var timestampSeen = false
 					writer.beginObject()
@@ -67,7 +72,7 @@ internal object LegacyCacheExtractor {
 										while (reader.hasNext()) {
 											if (descriptors.size >= limits.maxSources)
 												throw IOException("Source count limit exceeded")
-											descriptors += extractPayload(reader, destination, descriptors.size, limits)
+											descriptors += extractPayload(reader, destination, descriptors.size, limits, budget)
 										}
 										reader.endArray()
 									} else {
@@ -100,7 +105,7 @@ internal object LegacyCacheExtractor {
 	}
 
 	private fun extractPayload(reader: JsonReader, directory: File, index: Int,
-		limits: Limits): PumpPayloadDescriptor {
+		limits: Limits, budget: OutputBudget): PumpPayloadDescriptor {
 		val reference = "payload_${index}.json"
 		var assignment: String? = null
 		var payloadSeen = false
@@ -117,7 +122,7 @@ internal object LegacyCacheExtractor {
 				"rawPayload" -> {
 					payloadSeen = true
 					if (reader.peek() != JsonToken.BEGIN_OBJECT) throw IOException("Invalid payload")
-					writeJson(File(directory, reference)) { copyValue(reader, it, 1) }
+					writeJson(File(directory, reference), limits.maxPayloadBytes, budget) { copyValue(reader, it, 1) }
 				}
 				else -> throw IOException("Unsupported source wrapper member")
 			}
@@ -126,9 +131,41 @@ internal object LegacyCacheExtractor {
 		return PumpPayloadAccess.describe(directory, reference, assignment, limits.maxPayloadBytes)
 	}
 
-	private fun writeJson(file: File, block: (JsonWriter) -> Unit) {
+	private class OutputBudget(private val directory: File, private val limits: Limits) {
+		private var remaining = limits.maxOutputBytes
+
+		fun consume(bytes: Int) {
+			if (bytes.toLong() > remaining) throw IOException("Aggregate output limit exceeded")
+			val available = directory.usableSpace
+			if (available < limits.reserveDiskBytes ||
+				bytes.toLong() > available - limits.reserveDiskBytes)
+				throw IOException("Insufficient staging disk space")
+			remaining -= bytes
+		}
+	}
+
+	private fun writeJson(file: File, maxBytes: Long, budget: OutputBudget, block: (JsonWriter) -> Unit) {
 		file.outputStream().use { output ->
-			val writer = JsonWriter(output.writer(Charsets.UTF_8).buffered())
+			val bounded = object : java.io.OutputStream() {
+				private var remaining = maxBytes
+
+				private fun consume(bytes: Int) {
+					if (bytes.toLong() > remaining) throw IOException("File output limit exceeded")
+					budget.consume(bytes)
+					remaining -= bytes
+				}
+
+				override fun write(b: Int) {
+					consume(1)
+					output.write(b)
+				}
+
+				override fun write(b: ByteArray, off: Int, len: Int) {
+					consume(len)
+					output.write(b, off, len)
+				}
+			}
+			val writer = JsonWriter(bounded.writer(Charsets.UTF_8).buffered())
 			writer.serializeNulls = true
 			block(writer)
 			writer.flush()
