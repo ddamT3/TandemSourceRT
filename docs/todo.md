@@ -966,8 +966,8 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.3 | Avvio senza caricamento automatico | IN_PROGRESS |
 | MEM-13.3a | Capacita e pressione memoria dispositivo/app | IN_PROGRESS |
 | MEM-13.4 | Test e build offline (dopo MEM-13.3a) | VERIFIED |
-| MEM-13.5 | Installazione autorizzata e verifica GUI | PLANNED |
-| MEM-13.6 | Misure a riposo e durante caricamento | PLANNED |
+| MEM-13.5 | Installazione autorizzata e verifica GUI | IN_PROGRESS |
+| MEM-13.6 | Misure a riposo e durante caricamento | IN_PROGRESS |
 | MEM-13.7 | Analisi fasi critiche | PLANNED |
 
 MEM-13.2 e MEM-13.3: sorgenti pubblicati e riletti su GitHub,
@@ -1055,3 +1055,20 @@ Evidenze WIP MEM-13.3a:
   Android ancora necessaria. Test specifici di calcolo,
   frequenza e overhead Android ancora da completare.
 - Nessuna evidenza di risoluzione OOM. MEM-12 resta BLOCKED.
+
+#### MEM-13.5 - Installazione e prima verifica GUI
+
+- Installazione adb -r PASS su STK-LX1, 25/11/2026 09:52:37.
+- firstInstallTime invariato; nessuna cancellazione dati.
+- Monitor accessibile, switch ON, grafici e controlli visibili.
+- Screenshot a riposo: RAM totale 3679.9 MiB, disponibile
+  1249.4 MiB, threshold 216 MiB, lowMemory false.
+- Heap 6.0-6.6 MiB su 384 MiB, picco 8.5 MiB,
+  committed 11.1 MiB, native 18.7 MiB, PSS 49.9-52.8 MiB.
+- Prima baseline visiva positiva; durata, export, persistenza
+  switch dopo riavvio e overhead non ancora verificati.
+- Richiesta GUI: rimuovere pulsante Back ridondante nel Monitor.
+  Conservare navigazione di sistema e barra inferiore.
+  Intervento PLANNED, non richiede reinstallazione immediata.
+- MEM-13.5 IN_PROGRESS; MEM-13.6 prima baseline visiva acquisita.
+- Non cancellare statistiche prima di esportare le evidenze.
