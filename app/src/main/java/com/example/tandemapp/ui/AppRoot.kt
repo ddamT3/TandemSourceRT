@@ -322,6 +322,19 @@ fun AppRoot(vm: HomeViewModel) {
 		bottomBar = {
 			NavigationBar {
 				NavigationBarItem(
+					selected = currentScreen == AppScreen.Login,
+					onClick = { currentScreen = AppScreen.Login },
+					icon = {
+						Icon(
+							imageVector = Icons.Outlined.Lock,
+							contentDescription = "Login",
+							modifier = Modifier.size(21.dp)
+						)
+					},
+					label = { Text("Login", fontSize = 10.sp) }
+				)
+
+				NavigationBarItem(
 					selected = currentScreen == AppScreen.Home,
 					onClick = { currentScreen = AppScreen.Home },
 					icon = { DashboardChartIcon() },
@@ -359,16 +372,10 @@ fun AppRoot(vm: HomeViewModel) {
 				)
 
 				NavigationBarItem(
-					selected = currentScreen == AppScreen.Login,
-					onClick = { currentScreen = AppScreen.Login },
-					icon = {
-						Icon(
-							imageVector = Icons.Outlined.Lock,
-							contentDescription = "Login",
-							modifier = Modifier.size(21.dp)
-						)
-					},
-					label = { Text("Login", fontSize = 10.sp) }
+					selected = currentScreen == AppScreen.Monitor,
+					onClick = { currentScreen = AppScreen.Monitor },
+					icon = { MemoryMonitorIcon() },
+					label = { Text("Monitor", fontSize = 10.sp) }
 				)
 			}
 		}
@@ -550,6 +557,11 @@ fun AppRoot(vm: HomeViewModel) {
 						}
 					}
 				},
+				modifier = Modifier.padding(innerPadding)
+			)
+
+			AppScreen.Monitor -> MemoryDiagnosticsScreen(
+				onBack = { currentScreen = AppScreen.Login },
 				modifier = Modifier.padding(innerPadding)
 			)
 
@@ -831,5 +843,23 @@ private fun CalendarMonthGridIcon(
 			size = Size(w * 0.08f, h * 0.10f),
 			cornerRadius = CornerRadius(w * 0.03f, w * 0.03f)
 		)
+	}
+}
+
+@Composable
+private fun MemoryMonitorIcon() {
+	val tint = LocalContentColor.current
+	Canvas(modifier = Modifier.size(22.dp)) {
+		val points = listOf(
+			Offset(0f, size.height * 0.55f),
+			Offset(size.width * 0.25f, size.height * 0.55f),
+			Offset(size.width * 0.40f, size.height * 0.15f),
+			Offset(size.width * 0.60f, size.height * 0.85f),
+			Offset(size.width * 0.75f, size.height * 0.55f),
+			Offset(size.width, size.height * 0.55f)
+		)
+		for (i in 1 until points.size) {
+			drawLine(tint, points[i - 1], points[i], strokeWidth = size.width * 0.075f)
+		}
 	}
 }
