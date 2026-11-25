@@ -15,7 +15,7 @@ class LegacyCgmValidatorTest {
 
 	private val raw = """{"events":[{"eventCode":13},{"eventCode":399,"sequenceNumber":7,"sequenceGroup":2,"pumpDateTime":"synthetic","estimatedDateTime":"estimated","deviceAssignmentId":"test","eventProperties":{"currentGlucoseDisplayValue":100,"egvTimeStamp":123}}]}"""
 	private val source = CgmSourceMetadata(0, 1, 7, 2, "synthetic", "estimated", JsonPrimitive(123), "test")
-	private val point = CgmPoint("synthetic", 100, source = source)
+	private val point = CgmPoint("2008-01-01T00:02:03Z", 100, source = source)
 
 	private fun archive(index: Int = 0): PumpPayloadDescriptor {
 		val name = "payload_${index}.json"
@@ -97,4 +97,43 @@ class LegacyCgmValidatorTest {
 			// Expected limit failure.
 		}
 	}
+	@Test fun incorrectTimestamp() {
+		val descriptor = archive()
+		reject { LegacyCgmValidator.validate(temp.root, listOf(descriptor),
+			listOf(point.copy(time = "2008-01-01T00:02:04Z"))) }
+	}
+
+	@Test fun incorrectRecoveredFlag() {
+		val descriptor = archive()
+		reject { LegacyCgmValidator.validate(temp.root, listOf(descriptor),
+			listOf(point.copy(is_recovered = true))) }
+	}
+
+	@Test fun recoveredScalarAndArray() {
+		for (value in listOf("1", "[0,1]")) {
+			val file = File(temp.root, "recovered.json")
+			file.writeText(raw.replace("\"egvTimeStamp\":123", "\"egvTimeStamp\":123,\"cgmDataType\":$value"))
+			val descriptor = PumpPayloadAccess.describe(temp.root, file.name, "test", 10000)
+			LegacyCgmValidator.validate(temp.root, listOf(descriptor),
+				listOf(point.copy(is_recovered = true)))
+			reject { LegacyCgmValidator.validate(temp.root, listOf(descriptor), listOf(point)) }
+		}
+	}
+
+	@Test fun fallbackPumpAndEstimatedTime() {
+		for (pumpPresent in listOf(true, false)) {
+			val file = File(temp.root, "fallback.json")
+			val pump = if (pumpPresent) "2026-01-01T01:02:03" else null
+			val estimated = "2026-01-01T02:03:04"
+			val pumpJson = if (pump == null) "null" else "\"$pump\""
+			file.writeText(raw.replace("\"pumpDateTime\":\"synthetic\"", "\"pumpDateTime\":$pumpJson")
+				.replace("\"estimatedDateTime\":\"estimated\"", "\"estimatedDateTime\":\"$estimated\"")
+				.replace("\"egvTimeStamp\":123", "\"egvTimeStamp\":0"))
+			val descriptor = PumpPayloadAccess.describe(temp.root, file.name, "test", 10000)
+			val expected = point.copy(time = (pump ?: estimated) + "Z",
+				source = source.copy(pumpDateTime = pump, estimatedDateTime = estimated, egvTimeStamp = JsonPrimitive(0)))
+			LegacyCgmValidator.validate(temp.root, listOf(descriptor), listOf(expected))
+		}
+	}
+
 }
