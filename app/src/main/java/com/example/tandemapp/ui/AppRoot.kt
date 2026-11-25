@@ -160,6 +160,8 @@ fun AppRoot(vm: HomeViewModel) {
 			mutableStateOf(prefs.getBoolean("remember_me", false))
 	}
 
+	var automaticDataLoad by remember { mutableStateOf(prefs.getBoolean("automatic_data_load", false)) }
+
 	suspend fun loadPumpSettings() {
 		val requestSerial = ++pumpSettingsRequestSerial
 		if (loginEmail.isBlank() || loginPassword.isBlank()) {
@@ -224,7 +226,7 @@ fun AppRoot(vm: HomeViewModel) {
 	}
 
 	LaunchedEffect(Unit) {
-		if (loginRememberMe && loginEmail.isNotBlank() && loginPassword.isNotBlank()) {
+		if (automaticDataLoad && loginRememberMe && loginEmail.isNotBlank() && loginPassword.isNotBlank()) {
 			val cacheReadStarted = SystemClock.elapsedRealtime()
 			val cachedChart = chartCacheRepo.read()
 			Log.i("TandemStartupPerf", "chart cache read end elapsedMs=${SystemClock.elapsedRealtime() - cacheReadStarted} present=${cachedChart != null}")
@@ -571,6 +573,11 @@ fun AppRoot(vm: HomeViewModel) {
 				email = loginEmail,
 				password = loginPassword,
 				rememberMe = loginRememberMe,
+				automaticDataLoad = automaticDataLoad,
+				onAutomaticDataLoadChange = { enabled ->
+					automaticDataLoad = enabled
+					prefs.edit().putBoolean("automatic_data_load", enabled).apply()
+				},
 				errorMessage = loginError,
 				messageIsSuccess = loginError == AUTH_SUCCESS_MESSAGE,
 				onEmailChange = { newEmail ->
