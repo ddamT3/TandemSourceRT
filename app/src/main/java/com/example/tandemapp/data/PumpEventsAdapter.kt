@@ -214,14 +214,18 @@ object PumpEventsAdapter {
 	private fun JsonObject.present(name: String) = this[name] != null && this[name] !is JsonNull
 
 	private fun extractCgm(events: List<IndexedValue<PumpEventDto>>) = events.mapNotNull { (index, event) ->
-		if (event.eventCode != 399) return@mapNotNull null
+		originalCgm(index, event)
+	}.sortedBy { it.time }
+
+	internal fun originalCgm(index: Int, event: PumpEventDto): CgmPoint? {
+		if (event.eventCode != 399) return null
 		val p = event.eventProperties
 		val seconds = p.integer("egvTimeStamp")
 		val pointTime = if (seconds > 0) tandemEpoch.plus(seconds.toLong(), ChronoUnit.SECONDS).toString() else time(event)
 		val value = (p["currentGlucoseDisplayValue"] as? JsonPrimitive)?.intOrNull
 		val dataType = p["cgmDataType"]
 		val recovered = if (dataType is JsonArray) dataType.any { (it as? JsonPrimitive)?.intOrNull == 1 } else (dataType as? JsonPrimitive)?.intOrNull == 1
-		if (pointTime == null || value == null) null else CgmPoint(
+		return if (pointTime == null || value == null) null else CgmPoint(
 			pointTime, value, recovered,
 			CgmSourceMetadata(
 				payloadIndex = 0, eventIndex = index,
@@ -230,7 +234,7 @@ object PumpEventsAdapter {
 				egvTimeStamp = p["egvTimeStamp"]?.takeUnless { it is JsonNull }, deviceAssignmentId = event.deviceAssignmentId
 			)
 		)
-	}.sortedBy { it.time }
+	}
 
 	private fun extractIob(events: List<PumpEventDto>) = events.mapNotNull { event ->
 		val pointTime = time(event)
