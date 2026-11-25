@@ -967,8 +967,12 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.3a | Capacita e pressione memoria dispositivo/app | IN_PROGRESS |
 | MEM-13.4 | Test e build offline (dopo MEM-13.3a) | VERIFIED |
 | MEM-13.5 | Installazione autorizzata e verifica GUI | IN_PROGRESS |
-| MEM-13.6 | Misure a riposo e durante caricamento | IN_PROGRESS |
-| MEM-13.7 | Analisi fasi critiche | PLANNED |
+| MEM-13.6 | Misure a riposo e durante caricamento | VERIFIED |
+| MEM-13.7 | Identificazione fase critica cache_decode | VERIFIED |
+| MEM-14.1 | Inventario cache senza materializzazione | IN_PROGRESS |
+| MEM-14.2 | Analisi allocazioni e crescita storico | PLANNED |
+| MEM-14.3 | Soluzione mirata e test sintetici | PLANNED |
+| MEM-14.4 | Regressione, build e verifica Android autorizzata | PLANNED |
 
 MEM-13.2 e MEM-13.3: sorgenti pubblicati e riletti su GitHub,
 non ancora compilati o verificati su Android.
@@ -1072,3 +1076,60 @@ Evidenze WIP MEM-13.3a:
   Intervento PLANNED, non richiede reinstallazione immediata.
 - MEM-13.5 IN_PROGRESS; MEM-13.6 prima baseline visiva acquisita.
 - Non cancellare statistiche prima di esportare le evidenze.
+
+#### MEM-13.6/7 - Evidenza 25/11/2026
+
+Due sessioni distinte, ore 10:22 e 10:30, 101 e 97 record
+diagnostici. Entrambe completano assignments, download/decode,
+json_parse, event_extraction e assignment_merge. cache_decode
+ha START senza END in entrambi i CSV acquisiti.
+
+| Misura | 10:22 | 10:30 |
+| --- | --- | --- |
+| Download/decode principale (ms) | 6442 | 7531 |
+| JSON parse (ms) | 2426 | 3394 |
+| Event extraction (ms) | 3505 | 3667 |
+| Assignment merge (ms) | 82 | 56 |
+| Heap max campionato (byte) | 402653184 | 402653176 |
+| Limite heap (byte) | 402653184 | 402653184 |
+| RAM disponibile minima campionata (byte) | 1020686336 | 1247145984 |
+| Margine ultimo campione (byte) | 8 | 8 |
+
+LowMemory false nei campioni di sistema disponibili.
+ADB successivo: processo assente. Saturazione heap durante
+cache_decode riprodotta; eccezione finale e singole allocazioni
+non identificate. Non dedurre assenza assoluta di pressione
+sistema dai soli campioni. Non ripetere il crash.
+
+#### MEM-14 - Priorita correzione cache
+
+Analisi sorgente ChartDataCacheRepository.kt (blob
+6a2a86841cbebb56278deb03acd349e8fdc700c3):
+mergeForDisplay chiama initialize prima di compattare incoming.
+readEnvelope materializza ChartDataCache completo tramite
+decodeFromStream, inclusi DayDataset e pumpEventsSources.
+Streaming del file non implica memoria limitata del dataset.
+retainWindow filtra serie ma non eventi nei payload originali.
+compactSources conserva interi payload referenziati o con
+clockChanges; retainCgmOriginals accumula sorgenti distinte.
+Ipotesi da verificare: crescita di payload sovrapposti conservati
+tra aggiornamenti. Nessuna prova ancora del contributo relativo.
+readEnvelope usa runCatching anche per errori fatali e GC/sleep
+dopo decode; non adottarli come rimedio OOM.
+
+MEM-14.1: misurare dimensioni cache e marker senza leggere
+contenuto sanitario; inventario strutturale locale in streaming
+con soli conteggi e byte aggregati, nessun payload esportato.
+MEM-14.2: verificare modello e serializzatori, moltiplicita,
+riferimenti, clockChanges, crescita per aggiornamento e
+allocazioni con fixture sintetiche.
+MEM-14.3: scegliere intervento dopo evidenze; preservare
+provenienza, retention e cache precedente, evitare perdita
+silenziosa in caso di errore. Nessun aumento heap o reset cache.
+MEM-14.4: regressione e build offline, prova Android autorizzata
+con confronto baseline e picco; non dichiarare OOM risolto
+prima della verifica.
+
+R2.3.3+ restano sospesi. MEM-12 resta BLOCKED. Nessuna modifica
+applicativa in questo aggiornamento. MEM-13.5 resta IN_PROGRESS
+per persistenza switch, export e verifiche GUI residue.
