@@ -969,8 +969,8 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.5 | Installazione autorizzata e verifica GUI | IN_PROGRESS |
 | MEM-13.6 | Misure a riposo e durante caricamento | VERIFIED |
 | MEM-13.7 | Identificazione fase critica cache_decode | VERIFIED |
-| MEM-14.1 | Inventario cache senza materializzazione | IN_PROGRESS |
-| MEM-14.2 | Analisi allocazioni e crescita storico | PLANNED |
+| MEM-14.1 | Inventario cache senza materializzazione | VERIFIED |
+| MEM-14.2 | Analisi allocazioni e crescita storico | IN_PROGRESS |
 | MEM-14.3 | Soluzione mirata e test sintetici | PLANNED |
 | MEM-14.4 | Regressione, build e verifica Android autorizzata | PLANNED |
 
@@ -1133,3 +1133,23 @@ prima della verifica.
 R2.3.3+ restano sospesi. MEM-12 resta BLOCKED. Nessuna modifica
 applicativa in questo aggiornamento. MEM-13.5 resta IN_PROGRESS
 per persistenza switch, export e verifiche GUI residue.
+
+#### MEM-14.1 - Evidenza inventario cache 25/11/2026
+
+- Cache 69651864 byte (66.425 MiB), ultima modifica 17/11 07:28.
+- Marker p0c2b-v3-days-7, retention configurata 7 giorni.
+- Scansione strutturale streaming locale ADB: PASS, 23.77 s,
+  SIZE_MATCH YES, nessun payload salvato, dispositivo invariato.
+- pumpEventsSources: 17 payload, 66038721 byte (94.81%).
+- events: 187484 elementi, 66017995 byte; clockChanges:
+  67 elementi, 18923 byte (sottoinsiemi delle sorgenti).
+- CGM: 9849 elementi, 2939159 byte; supplementalEvents:
+  1776 elementi, 504286 byte; basal 1820/105186;
+  iob 866/41179; deviceStates 68/11827; bolus 71/10505;
+  carbs 18/847 (conteggi/byte).
+- La predominanza dei payload originali su disco e verificata;
+  contributo alle allocazioni heap e sovrapposizione tra payload
+  da misurare. Scansione non equivalente a validazione JSON completa.
+- MEM-14.2: misurare sovrapposizioni per sorgente e riferimenti
+  CGM, preservando moltiplicita e clockChanges; solo aggregati
+  locali, nessuna deduplicazione o modifica cache in questa fase.
