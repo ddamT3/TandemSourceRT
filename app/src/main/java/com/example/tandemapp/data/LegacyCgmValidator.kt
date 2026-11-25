@@ -6,9 +6,6 @@ import java.io.IOException
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 
 /** Validates original provenance, without applying display-time transformations. */
@@ -46,16 +43,10 @@ internal object LegacyCgmValidator {
 						if (references != null) {
 							val event = json.decodeFromJsonElement<PumpEventDto>(raw)
 							for (point in references) {
-								val source = requireNotNull(point.source)
-								val properties = event.eventProperties
-								if (event.eventCode != 399 ||
-									(properties["currentGlucoseDisplayValue"] as? JsonPrimitive)?.intOrNull != point.value ||
-									source.sequenceNumber != event.sequenceNumber ||
-									source.sequenceGroup != event.sequenceGroup ||
-									source.pumpDateTime != event.pumpDateTime ||
-									source.estimatedDateTime != event.estimatedDateTime ||
-									source.deviceAssignmentId != event.deviceAssignmentId ||
-									source.egvTimeStamp != properties["egvTimeStamp"]?.takeUnless { it is JsonNull })
+								val expected = PumpEventsAdapter.originalCgm(index.toInt(), event)
+									?: throw IOException("Invalid original CGM event")
+								val expectedSource = requireNotNull(expected.source).copy(payloadIndex = payloadIndex)
+								if (point != expected.copy(source = expectedSource))
 									throw IOException("CGM provenance mismatch")
 								matched++
 							}
