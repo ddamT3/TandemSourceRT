@@ -1226,3 +1226,17 @@ Proposta descrittore leggero: assignment, clockChanges, riferimento
 archivio, conteggio eventi e integrita; nessun formato definitivo.
 Prima del prototipo verificare test esistenti e contratto di
 pubblicazione, errori e limiti aggregati. Nessun sorgente modificato.
+
+#### MEM-14.3b - Prototipo descrittore e accesso selettivo
+
+- MEM-14.3b.1 DONE: PumpPayloadDescriptor.kt, commit 41d4e44.
+- MEM-14.3b.2: 7/8 PASS, fallimento round-trip clockChanges assente/null.
+- MEM-14.3b.2a VERIFIED: rappresentazione interna lista 0/1 elementi;
+  correzione 8468e11, adeguamento test 1a0541b.
+  Output locale utente: HEAD 1a0541b2fa2a21ae7059901c2129fc344be60c7f,
+  8 test, 0 failure/error/skip, assembleDebug offline PASS.
+  Nessuna installazione o modifica dispositivo riportata.
+- MEM-14.3b.3 PLANNED: benchmark sintetico in JVM isolata, confronto
+  descrittore e accesso selettivo con dimensioni crescenti, heap e tempi;
+  verificare integrita e memoria senza dati reali. Nessuna conclusione
+  Android o integrazione applicativa dai soli test unitari.
