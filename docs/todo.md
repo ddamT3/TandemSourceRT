@@ -1277,3 +1277,14 @@ Aperti: validazione semantica riferimenti CGM, budget aggregati,
 payload senza events (attualmente rifiutati), directory temporanee JUnit,
 manifest, pubblicazione e recovery. Prima della pubblicazione completare
 validazione e limiti, poi benchmark migrazione completa.
+
+#### MEM-14.3c.2b.1 - VERIFIED
+
+HEAD locale 1d8fb46fbf3a809f5b3ac159229a1eaef0b32b56.
+LegacyCgmValidatorTest 10/10, LegacyCacheExtractorTest 10/10,
+zero failure/error/skip; assembleDebug offline PASS.
+Nessun dato reale utilizzato, nessuna modifica al dispositivo.
+Validazione batch dei riferimenti originali e SHA-256 verificata su fixture sintetiche.
+Restano aperti timestamp elaborato, is_recovered, limiti aggregati,
+integrazione estrattore/validatore, gestione payload senza events,
+collocazione temporanei, pubblicazione e recovery. Nessuna prova OOM risolta.
