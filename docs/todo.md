@@ -1265,3 +1265,15 @@ applicativa, memoria aggregata, migrazione o comportamento Android.
 Due warning nullable nel benchmark da correggere prima consolidamento.
 Prossimo: contratto migrazione streaming e pubblicazione recuperabile,
 verifica test esistenti, limiti aggregati e regressione sintetica.
+
+#### MEM-14.3c.2a - VERIFIED
+
+HEAD locale 4c8ff413460f0eb90ce1ec869ee2d0f3d7c44264.
+LegacyCacheExtractorTest: 10 test, 0 failure, 0 error, 0 skip.
+assembleDebug offline PASS. Nessun dato reale o modifica dispositivo.
+Estrattore JSON streaming senza SQLite, non integrato nell'app.
+Conservazione logica verificata su fixture sintetica, non identita byte.
+Aperti: validazione semantica riferimenti CGM, budget aggregati,
+payload senza events (attualmente rifiutati), directory temporanee JUnit,
+manifest, pubblicazione e recovery. Prima della pubblicazione completare
+validazione e limiti, poi benchmark migrazione completa.
