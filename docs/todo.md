@@ -971,7 +971,7 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.7 | Identificazione fase critica cache_decode | VERIFIED |
 | MEM-14.1 | Inventario cache senza materializzazione | VERIFIED |
 | MEM-14.2 | Analisi allocazioni e crescita storico | IN_PROGRESS |
-| MEM-14.3 | Soluzione mirata e test sintetici | PLANNED |
+| MEM-14.3 | Soluzione mirata e test sintetici | IN_PROGRESS |
 | MEM-14.4 | Regressione, build e verifica Android autorizzata | PLANNED |
 
 MEM-13.2 e MEM-13.3: sorgenti pubblicati e riletti su GitHub,
@@ -1177,3 +1177,30 @@ per persistenza switch, export e verifiche GUI residue.
 - Valutare separazione fisica dei payload originali dalla cache
   elaborata, con accesso su richiesta; nessuna scelta definitiva
   o modifica applicativa. R2.3.3+ restano sospesi.
+
+#### MEM-14.3 - Direzione approvata 25/11/2026
+
+Separare persistenza dei payload originali e cache elaborata,
+caricando gli originali solo su richiesta. Nessuna deduplicazione,
+SQLite o indice binario in questa fase. MEM-14.2 resta aperto
+per verifiche sintetiche delle allocazioni.
+
+| Sottofase | Attivita | Stato |
+| --- | --- | --- |
+| MEM-14.3a | Inventario consumatori dei payload e contratto dati | IN_PROGRESS |
+| MEM-14.3b | Prototipo separazione e lettura selettiva | PLANNED |
+| MEM-14.3c | Migrazione streaming non distruttiva e recovery | PLANNED |
+| MEM-14.3d | Test sintetici integrita, memoria e guasti | PLANNED |
+| MEM-14.3e | Integrazione percorso operativo | PLANNED |
+
+Preservare originali, ordine, eventIndex, payloadIndex verificabile,
+clockChanges, molteplicità CGM e retention. Migrazione senza
+materializzare la vecchia cache intera, mantenendo il file
+precedente fino a validazione e pubblicazione recuperabile.
+Verificare tutti i consumatori prima di cambiare il modello.
+Nessun formato definitivo scelto. Misurare heap con fixture
+sintetiche comparabili ai 17 payload / 187484 eventi osservati.
+Verificare anche download, merge e save: separare solo la lettura
+non garantisce memoria limitata durante gli aggiornamenti.
+Nessuna modifica applicativa, installazione o reset autorizzato
+in questo checkpoint documentale.
