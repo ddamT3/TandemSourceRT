@@ -1288,3 +1288,15 @@ Validazione batch dei riferimenti originali e SHA-256 verificata su fixture sint
 Restano aperti timestamp elaborato, is_recovered, limiti aggregati,
 integrazione estrattore/validatore, gestione payload senza events,
 collocazione temporanei, pubblicazione e recovery. Nessuna prova OOM risolta.
+
+#### MEM-14.3c.2b.3 - VERIFIED
+
+HEAD locale b3bd4acad7f4e3b3f3b85185d8d579e14b94ff63.
+Regressione offline: 284 test, 282 PASS, 0 failure, 0 error, 2 skip attesi
+(PumpEventsAdapterParityTest fixture locale assente e PumpPayloadDescriptorBenchmarkTest opt-in).
+LegacyCgmValidatorTest 14/14, LegacyCacheExtractorTest 10/10, assembleDebug PASS.
+Proiezione CGM originale condivisa con adapter: timestamp e is_recovered verificati
+su fixture sintetiche. Nessuna modifica dispositivo. Nessuna prova OOM risolta.
+Prossimo MEM-14.3c.2c: budget aggregati, limiti prima delle allocazioni/scritture,
+limiti descrittori e metadati, test di superamento e cleanup. Restano aperti
+integrazione, payload senza events, temporanei, pubblicazione e recovery.
