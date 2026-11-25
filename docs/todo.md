@@ -1153,3 +1153,27 @@ per persistenza switch, export e verifiche GUI residue.
 - MEM-14.2: misurare sovrapposizioni per sorgente e riferimenti
   CGM, preservando moltiplicita e clockChanges; solo aggregati
   locali, nessuna deduplicazione o modifica cache in questa fase.
+
+#### MEM-14.2 - Evidenza sovrapposizione payload 25/11/2026
+
+- Scansione locale PASS; 17 payload, 2 gruppi assignment,
+  nessun assignment sconosciuto. Nessun dato originale salvato
+  o modifica dispositivo.
+- 187484 eventi, 149874 sovrapposti (79.94%), 37610 distinti
+  per assignment secondo hash JSON normalizzato e massima
+  molteplicità osservata; nessun duplicato interno.
+- 9849 punti CGM, tutti con provenienza; 9849 riferimenti
+  distinti, nessun indice invalido (verifica strutturale).
+- 10 payload senza riferimenti CGM, tutti con clockChanges;
+  7 payload referenziati. 67 clockChanges complessivi.
+- Confermata sovrapposizione tra snapshot e condizione di
+  conservazione dei payload non referenziati in compactSources.
+- Non equivale a prova di equivalenza semantica o autorizzazione
+  a deduplicare. Conservare eventIndex, payloadIndex, metadati
+  temporali, molteplicità e originali. Non stimare heap futuro
+  dalla sola percentuale di sovrapposizione.
+- MEM-14.2 resta IN_PROGRESS: analisi allocazioni sintetiche,
+  sovrapposizione temporale e verifica alternative conservative.
+- Valutare separazione fisica dei payload originali dalla cache
+  elaborata, con accesso su richiesta; nessuna scelta definitiva
+  o modifica applicativa. R2.3.3+ restano sospesi.
