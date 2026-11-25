@@ -642,7 +642,7 @@ class StartupMemoryProfilerTest {
             .map { line ->
                 val fields = line.split(',')
 
-                assertEquals(14, fields.size)
+                assertEquals(18, fields.size)
 
                 fields
             }
