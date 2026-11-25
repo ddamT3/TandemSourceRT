@@ -964,7 +964,7 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.1 | Analisi navigazione e avvio | DONE |
 | MEM-13.2 | Monitor nella barra inferiore | IN_PROGRESS |
 | MEM-13.3 | Avvio senza caricamento automatico | IN_PROGRESS |
-| MEM-13.3a | Capacita e pressione memoria dispositivo/app | PLANNED |
+| MEM-13.3a | Capacita e pressione memoria dispositivo/app | IN_PROGRESS |
 | MEM-13.4 | Test e build offline (dopo MEM-13.3a) | PLANNED |
 | MEM-13.5 | Installazione autorizzata e verifica GUI | PLANNED |
 | MEM-13.6 | Misure a riposo e durante caricamento | PLANNED |
@@ -1024,4 +1024,15 @@ attribuire causalita al solo valore di RAM libera.
 Il limite heap di 384 MiB osservato su HONOR 9X e un'evidenza
 precedente, non un valore da codificare nel software.
 
-Stato: PLANNED. Implementazione e test non ancora eseguiti.
+Stato: IN_PROGRESS. Sorgenti pubblicati; test e build non eseguiti.
+
+Evidenze WIP MEM-13.3a:
+- 9592796: estensione CSV a 18 campi; export record legacy a 14
+  campi con quattro campi vuoti aggiunti, archivio invariato.
+- 2ee41c2: acquisizione MemoryInfo insieme al PSS.
+- c407511: GUI capacita, margine, percentuali e grafici.
+- fc875f2: test sintetico export misto legacy/nuovo.
+- Restano da verificare build, regressione, calcoli, campionamento,
+  overhead e comportamento Android. Con profiler OFF i valori
+  campionati sono storici o assenti. A riposo vale intervallo 5 s.
+- Nessuna modifica cache operativa o versione; nessuna installazione.
