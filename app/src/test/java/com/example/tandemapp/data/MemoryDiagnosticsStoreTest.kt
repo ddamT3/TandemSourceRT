@@ -1353,4 +1353,28 @@ class MemoryDiagnosticsStoreTest {
         assertEquals(listOf(999L), records())
         assertArchiveIndexConsistent()
     }
+
+    @Test(timeout = 10000)
+    fun exportsDeviceMemoryAndLegacyRecordsTogether() {
+        val now = System.currentTimeMillis()
+        val directory = File(root, "memory_diagnostics")
+        assertTrue(directory.mkdirs() || directory.isDirectory)
+        val legacy = File(directory, "memory-v3-${now / 60000L}.csv")
+        legacy.writeText("$now,1,SAMPLE,1024,2048,4096,512,,,,,,synthetic,\n")
+        store.append(MemoryDiagnosticsStore.Kind.SAMPLE,
+            2L, 1024L, 2048L, 4096L, 512L, 100,
+            deviceTotal = 4096L, deviceAvailable = 1024L,
+            deviceThreshold = 512L, deviceLowMemory = false)
+        append(3L)
+        drain()
+        val output = ByteArrayOutputStream()
+        store.exportTo(output)
+        val rows = output.toString("UTF-8").lineSequence()
+            .filter { it.isNotBlank() }.map { it.split(',') }.toList()
+        assertEquals(4, rows.size)
+        assertTrue(rows.all { it.size == 18 })
+        assertEquals(listOf("", "", "", ""), rows[1].takeLast(4))
+        assertEquals(listOf("4096", "1024", "512", "false"), rows[2].takeLast(4))
+        assertEquals(listOf("", "", "", ""), rows[3].takeLast(4))
+    }
 }
