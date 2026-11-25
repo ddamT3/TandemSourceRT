@@ -17,11 +17,13 @@ internal object LegacyCacheExtractor {
 		val maxTokenChars: Int = 1024 * 1024,
 		val maxDatasetBytes: Long = 32L * 1024 * 1024,
 		val maxOutputBytes: Long = 512L * 1024 * 1024,
-		val reserveDiskBytes: Long = 16L * 1024 * 1024
+		val reserveDiskBytes: Long = 16L * 1024 * 1024,
+		val maxRetainedMetadataBytes: Long = 4L * 1024 * 1024
 	) {
 		init {
 			require(maxInputBytes > 0 && maxPayloadBytes > 0)
 			require(maxDatasetBytes > 0 && maxOutputBytes > 0 && reserveDiskBytes >= 0)
+			require(maxRetainedMetadataBytes > 0)
 			require(maxSources in 1..128 && maxTokenChars in 1..1024 * 1024)
 		}
 	}
@@ -36,6 +38,7 @@ internal object LegacyCacheExtractor {
 		try {
 			val descriptors = mutableListOf<PumpPayloadDescriptor>()
 			val budget = OutputBudget(destination, limits)
+			var metadataRemaining = limits.maxRetainedMetadataBytes
 			source.inputStream().use { input ->
 				val bounded = object : java.io.FilterInputStream(input) {
 					var remaining = size
@@ -72,7 +75,17 @@ internal object LegacyCacheExtractor {
 										while (reader.hasNext()) {
 											if (descriptors.size >= limits.maxSources)
 												throw IOException("Source count limit exceeded")
-											descriptors += extractPayload(reader, destination, descriptors.size, limits, budget)
+											val descriptor = extractPayload(reader, destination, descriptors.size, limits, budget)
+											val assignmentBytes = descriptor.requestedAssignmentId?.let {
+												PumpPayloadStreamParser.utf8ByteCount(it)
+											} ?: 0L
+											if (assignmentBytes > metadataRemaining)
+												throw IOException("Aggregate metadata limit exceeded")
+											metadataRemaining -= assignmentBytes
+											descriptor.clockChanges?.let {
+												metadataRemaining -= PumpPayloadStreamParser.serializedUtf8ByteCount(it, metadataRemaining)
+											}
+											descriptors += descriptor
 										}
 										reader.endArray()
 									} else {
