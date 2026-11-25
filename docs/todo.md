@@ -943,3 +943,42 @@ Non cancellare cache o dati applicativi per aggirare il problema.
 
 Il prototipo resta separato dal percorso operativo fino
 al completamento dei gate di compatibilita e integrita.
+
+### TS-001 - MEM-13: priorita diagnostica
+
+Stato: IN_PROGRESS.
+
+La dashboard si blocca dopo il login e successivamente l'app
+termina. L'utente non ha ancora potuto utilizzare il monitor.
+
+Priorita: rendere accessibile il monitor e misurare le fasi
+applicative prima di scegliere ulteriori modifiche allo storico.
+
+- R2.3.1 e R2.3.2: evidenze del prototipo preservate.
+- R2.3.3 e successive attivita architetturali: sospese.
+- Nessuna implementazione SQLite o confronto parallelo.
+- Nessuna modifica retention, cache o percorso di parsing operativo.
+
+| Checkpoint | Attivita | Stato |
+| --- | --- | --- |
+| MEM-13.1 | Analisi navigazione e avvio | DONE |
+| MEM-13.2 | Monitor nella barra inferiore | IN_PROGRESS |
+| MEM-13.3 | Avvio senza caricamento automatico | IN_PROGRESS |
+| MEM-13.4 | Test e build offline | PLANNED |
+| MEM-13.5 | Installazione autorizzata e verifica GUI | PLANNED |
+| MEM-13.6 | Misure a riposo e durante caricamento | PLANNED |
+| MEM-13.7 | Analisi fasi critiche | PLANNED |
+
+MEM-13.2 e MEM-13.3: sorgenti pubblicati e riletti su GitHub,
+non ancora compilati o verificati su Android.
+
+Ordine barra: Login, Dashboard, Calendar, Pump, Sensor Set, Monitor.
+Riutilizzare MemoryDiagnosticsScreen.
+Preferenza automatic_data_load persistente, default OFF.
+Remember me indipendente. Sign in conserva il caricamento manuale.
+
+Verificare avvio senza lettura cache o download automatico,
+accesso Monitor, persistenza preferenza, navigazione e caricamento
+manuale. Verificare esportazione misure precedenti e crash report.
+Non assumere che il monitor resti reattivo durante saturazione heap.
+Non cancellare cache o dati. MEM-12 resta BLOCKED fino a baseline.
