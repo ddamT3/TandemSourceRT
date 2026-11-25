@@ -10,14 +10,24 @@ import kotlinx.serialization.json.JsonObject
 
 /** Isolated prototype; archive files must be immutable while referenced. */
 @Serializable
-internal data class PumpPayloadDescriptor(
+internal data class PumpPayloadDescriptor private constructor(
 	val requestedAssignmentId: String?,
 	val archiveReference: String,
-	val clockChanges: JsonElement?,
+	private val clockMetadata: List<JsonElement>,
 	val eventCount: Long,
 	val archiveBytes: Long,
 	val sha256: String
-)
+) {
+	init { require(clockMetadata.size <= 1) }
+	val clockChanges: JsonElement? get() = clockMetadata.singleOrNull()
+
+	companion object {
+		fun create(assignment: String?, reference: String, clockChanges: JsonElement?,
+			eventCount: Long, archiveBytes: Long, sha256: String): PumpPayloadDescriptor =
+			PumpPayloadDescriptor(assignment, reference, listOfNotNull(clockChanges),
+				eventCount, archiveBytes, sha256)
+	}
+}
 
 internal object PumpPayloadAccess {
 	private fun resolve(directory: File, reference: String): File {
@@ -98,7 +108,7 @@ internal object PumpPayloadAccess {
 		val hash = digest.digest().joinToString("") {
 			(it.toInt() and 0xff).toString(16).padStart(2, '0')
 		}
-		return PumpPayloadDescriptor(
+		return PumpPayloadDescriptor.create(
 			assignment, reference, clockChanges, result.eventCount, size, hash
 		) to event
 	}
