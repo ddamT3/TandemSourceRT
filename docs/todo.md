@@ -965,7 +965,7 @@ applicative prima di scegliere ulteriori modifiche allo storico.
 | MEM-13.2 | Monitor nella barra inferiore | IN_PROGRESS |
 | MEM-13.3 | Avvio senza caricamento automatico | IN_PROGRESS |
 | MEM-13.3a | Capacita e pressione memoria dispositivo/app | IN_PROGRESS |
-| MEM-13.4 | Test e build offline (dopo MEM-13.3a) | PLANNED |
+| MEM-13.4 | Test e build offline (dopo MEM-13.3a) | VERIFIED |
 | MEM-13.5 | Installazione autorizzata e verifica GUI | PLANNED |
 | MEM-13.6 | Misure a riposo e durante caricamento | PLANNED |
 | MEM-13.7 | Analisi fasi critiche | PLANNED |
@@ -1036,3 +1036,22 @@ Evidenze WIP MEM-13.3a:
   overhead e comportamento Android. Con profiler OFF i valori
   campionati sono storici o assenti. A riposo vale intervallo 5 s.
 - Nessuna modifica cache operativa o versione; nessuna installazione.
+
+#### MEM-13.4 - Evidenza regressione e build
+
+- Prima regressione su e4950a5: 251 test, 246 PASS, 4 FAIL,
+  1 SKIP. Controllo comune CSV ancora a 14 campi.
+- Correzione b76fb08541146768694074c02b48a289d98feefd:
+  assertEquals(18, fields.size), nessuna modifica applicativa.
+- Sincronizzazione locale fast-forward PASS.
+- Regressione offline: 251 test, 250 PASS, 0 FAIL, 0 ERROR,
+  1 SKIP noto (fixture locale parity).
+- assembleDebug offline PASS.
+- APK: app/build/outputs/apk/debug/TandemSourceRT.apk
+- Versione: 26.11.002; dimensione: 24249964 byte.
+- SHA256: 2CACD09712DB6E2B5D0B08B608DD06E919556CB37B88A70DADF52047EF2F8CBA
+- APK non installato. MEM-13.5 richiede autorizzazione.
+- MEM-13.2, MEM-13.3 e MEM-13.3a compilati; verifica funzionale
+  Android ancora necessaria. Test specifici di calcolo,
+  frequenza e overhead Android ancora da completare.
+- Nessuna evidenza di risoluzione OOM. MEM-12 resta BLOCKED.
