@@ -105,14 +105,30 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
                 snapshot = StartupMemoryProfiler.getSnapshot()
             })
         }
+        val deviceSample = snapshot.history.lastOrNull { it.deviceMemory != null }
+        val device = deviceSample?.deviceMemory
+        Text("Device memory", style = MaterialTheme.typography.titleMedium)
+        Text("System RAM total: ${device?.totalBytes?.let(::mib) ?: "--"}")
+        Text("System RAM available: ${device?.availableBytes?.let(::mib) ?: "--"}")
+        Text("System RAM used (estimate): ${device?.let { percent((it.totalBytes - it.availableBytes).coerceAtLeast(0L), it.totalBytes) } ?: "--"}")
+        Text("Low memory threshold: ${device?.thresholdBytes?.let(::mib) ?: "--"}")
+        Text("Android low memory: ${device?.lowMemory?.toString() ?: "--"}")
+        if (deviceSample != null && sample != null) {
+            Text("System sample age at last heap sample: ${sample.elapsedMs - deviceSample.elapsedMs} ms")
+        }
+        if (!snapshot.enabled) Text("Profiler OFF: displayed samples are historical")
+        Text("Application memory", style = MaterialTheme.typography.titleMedium)
         Text("Java heap: ${sample?.usedBytes?.let(::mib) ?: "--"} / ${mib(limit)}")
-        Text("Sampled peak: ${mib(snapshot.peakBytes)}")
+        Text("Heap utilization: ${sample?.let { percent(it.usedBytes, limit) } ?: "--"}")
+        Text("Heap headroom: ${sample?.let { mib((limit - it.usedBytes).coerceAtLeast(0L)) } ?: "--"}")
+        Text("Sampled peak: ${mib(snapshot.peakBytes)} (${percent(snapshot.peakBytes, limit)})")
         Text("Java committed: ${sample?.committedBytes?.let(::mib) ?: "--"}")
         Text("Native allocated: ${sample?.nativeBytes?.let(::mib) ?: "--"}")
         val pss = snapshot.history.lastOrNull { it.pssKiB != null }?.pssKiB
         Text("Last PSS: ${pss?.let { mib(it.toLong() * 1024) } ?: "--"}")
-        Text("Recent heap samples")
+        Text("Recent heap samples (limit ${mib(limit)})")
         Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+            drawLine(androidx.compose.ui.graphics.Color.Red, Offset.Zero, Offset(size.width, 0f), 2.dp.toPx())
             val points = snapshot.history
             if (points.size > 1 && limit > 0) {
                 val first = points.first().elapsedMs
@@ -123,6 +139,24 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
                         size.height * (1f - (s.usedBytes.toFloat() / limit).coerceIn(0f, 1f)))
                 }
                 for (i in 1 until points.size) drawLine(graphColor, point(i - 1), point(i), 2.dp.toPx())
+            }
+        }
+        Text("System RAM available (same time window)")
+        Canvas(Modifier.fillMaxWidth().height(100.dp)) {
+            val points = snapshot.history
+            val total = device?.totalBytes ?: 0L
+            if (points.size > 1 && total > 0L) {
+                val first = points.first().elapsedMs
+                val span = (points.last().elapsedMs - first).coerceAtLeast(1L)
+                var previous: Offset? = null
+                for (entry in points) {
+                    val memory = entry.deviceMemory ?: continue
+                    val point = Offset(size.width * (entry.elapsedMs - first).toFloat() / span,
+                        size.height * (1f - (memory.availableBytes.toFloat() / total).coerceIn(0f, 1f)))
+                    previous?.let { drawLine(graphColor, it, point, 2.dp.toPx()) }
+                    drawCircle(graphColor, 2.dp.toPx(), point)
+                    previous = point
+                }
             }
         }
         Text("Completed phases", style = MaterialTheme.typography.titleMedium)
@@ -221,3 +255,6 @@ internal fun MemoryDiagnosticsScreen(onBack: () -> Unit, modifier: Modifier = Mo
 }
 
 private fun mib(bytes: Long): String = String.format(Locale.US, "%.1f MiB", bytes / 1048576.0)
+
+private fun percent(used: Long, total: Long): String =
+    if (total > 0L) String.format(Locale.US, "%.1f%%", 100.0 * used / total) else "--"
