@@ -1204,3 +1204,25 @@ Verificare anche download, merge e save: separare solo la lettura
 non garantisce memoria limitata durante gli aggiornamenti.
 Nessuna modifica applicativa, installazione o reset autorizzato
 in questo checkpoint documentale.
+
+#### MEM-14.3a - Verifica contratto e prototipi
+
+Inventario git grep fornito dall'utente su riferimento locale;
+HEAD locale b76fb08, nessuna modifica tracciata riportata.
+Models.kt e CgmTimeline.kt riletti sul branch remoto: timeline
+usa requestedAssignmentId e clockChanges, non array events.
+Adapter, repository e cache richiedono adattamento del contratto.
+Preservare assenza rispetto a JsonNull esplicito di clockChanges.
+PumpPayloadArchive riutilizzabile: buffer 64 KiB, SHA256, limite
+byte, fsync file e move atomico; non garantisce commit multi-file.
+PumpPayloadStreamParser riutilizzabile: callback per evento con
+indice Long originale, metadati, limiti per elemento, risultati
+provvisori fino a validazione completa. Richiede array events;
+compatibilita con payload legacy da verificare. Accesso per indice
+tramite scansione completa, senza indice binario iniziale.
+Non confondere integrita JSON logica della cache legacy con byte
+originali HTTP, non disponibili nella cache serializzata.
+Proposta descrittore leggero: assignment, clockChanges, riferimento
+archivio, conteggio eventi e integrita; nessun formato definitivo.
+Prima del prototipo verificare test esistenti e contratto di
+pubblicazione, errori e limiti aggregati. Nessun sorgente modificato.
