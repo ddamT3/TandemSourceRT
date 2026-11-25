@@ -27,6 +27,35 @@ internal object ChartCacheManifestFiles {
 		return ChartCacheManifest(ChartCacheManifest.SCHEMA_VERSION, generationId, dataset, descriptors.toList())
 	}
 
+	/** Verify an immutable generation against trusted, already bounded manifest metadata. */
+	fun validate(directory: File, manifest: ChartCacheManifest, expectedGenerationId: String,
+		limits: LegacyCacheExtractor.Limits = LegacyCacheExtractor.Limits()) {
+		if (manifest.generationId != expectedGenerationId)
+			throw IOException("Generation identity mismatch")
+		// Reapply structural checks even if a caller supplied a mutable list.
+		val expected = manifest.copy(payloads = manifest.payloads.toList())
+		val actual = build(directory, expectedGenerationId, expected.payloads, limits)
+		if (actual.dataset != expected.dataset)
+			throw IOException("Dataset integrity mismatch")
+		var metadataRemaining = limits.maxRetainedMetadataBytes
+		for (descriptor in expected.payloads) {
+			val assignment = descriptor.requestedAssignmentId
+			if ((assignment?.length ?: 0) > 4096)
+				throw IOException("Assignment too long")
+			val assignmentBytes = assignment?.let { PumpPayloadStreamParser.utf8ByteCount(it) } ?: 0L
+			if (assignmentBytes > metadataRemaining)
+				throw IOException("Aggregate metadata limit exceeded")
+			metadataRemaining -= assignmentBytes
+			descriptor.clockChanges?.let {
+				metadataRemaining -= PumpPayloadStreamParser.serializedUtf8ByteCount(it, metadataRemaining)
+			}
+			val scanned = PumpPayloadAccess.describe(directory, descriptor.archiveReference,
+				assignment, descriptor.archiveBytes)
+			if (scanned != descriptor)
+				throw IOException("Payload descriptor integrity mismatch")
+		}
+	}
+
 	internal fun resolve(directory: File, name: String): File {
 		require(name.matches(Regex("[a-zA-Z0-9_-]{1,100}\\.json")))
 		val file = File(directory.canonicalFile, name)
