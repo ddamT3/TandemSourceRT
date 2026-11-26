@@ -1315,3 +1315,22 @@ HEAD locale 72057505f58648489229ca0fa061adff8510827e.
 Regressione offline: 300 test, 298 PASS, zero failure/error, 2 skip attesi (PumpEventsAdapterParityTest e PumpPayloadDescriptorBenchmarkTest). Migrazione 9/9, estrattore 17/17, validatore CGM 14/14; assembleDebug PASS. Nessuna modifica dispositivo.
 Coordinatore di staging non pubblicato: parita logica JSON, serie, riferimenti CGM, molteplicità, metadati e cleanup verificati su fixture sintetiche. Restano aperti payload senza events, locking, manifest, pubblicazione atomica, recovery e misura heap della migrazione completa.
 Prossimo MEM-14.3c.3: manifest e pubblicazione atomica, senza modificare cache operativa o marker legacy.
+
+#### MEM-14.3c.3 - VERIFIED (test JVM e build)
+
+HEAD locale 1fc9b0aca242e2a4487be80835d1e6b02388b3df.
+Manifest, persistenza e pubblicazione atomica, lock writer cooperativo.
+Test mirati 17/17 (manifest 8, pubblicazione 5, concorrenza 4).
+Regressione offline 317 test, 315 PASS, zero failure/error,
+2 skip attesi (parity fixture locale e benchmark opt-in).
+assembleDebug offline PASS (45 s), APK 23426407 byte,
+SHA256 3CF59BF2FF5132F87B43C022041F1D5C6E4BF8F850175FAEA9F70FF7F8ACF6D8.
+Stato locale invariato secondo output utente. Nessuna installazione.
+Sync directory simulata nei test; durabilita Android e concorrenza
+tra processi non verificate. Lock cooperativo, repository legacy
+non ancora integrato. Verificare anche semantica lock POSIX quando
+un secondo channel sullo stesso file viene chiuso.
+Prossimo: MEM-14.3c.4 recovery e lettura limitata del puntatore/manifest,
+validazione generazione, gestione non distruttiva degli orfani.
+Restano benchmark migrazione completa, warning nullable, integrazione
+operativa e verifica Android. MEM-12 resta BLOCKED; OOM non risolto.
