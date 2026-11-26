@@ -7,23 +7,34 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.LinkOption
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Cooperative, non-blocking writer exclusion. The lock file must never be removed. */
 internal object ChartCacheTransaction {
+	// Acquire before opening any lock-file descriptor, including nested attempts.
+	// One gate per object/classloader, deliberately shared across all stores.
+	private val writerActive = AtomicBoolean(false)
+
 	internal fun <T> withWriter(store: File, operation: (File) -> T): T {
-		val root = store.canonicalFile
-		if (!root.isDirectory) throw IOException("Generation store unavailable")
-		val lockFile = File(root, ".writer.lock")
-		FileChannel.open(lockFile.toPath(), StandardOpenOption.CREATE,
-			StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).use { channel ->
-			val lock = try {
-				channel.tryLock()
-			} catch (failure: OverlappingFileLockException) {
-				throw IOException("Generation writer busy", failure)
-			} ?: throw IOException("Generation writer busy")
-			lock.use {
-				return operation(root)
+		if (!writerActive.compareAndSet(false, true))
+			throw IOException("Generation writer busy")
+		try {
+			val root = store.canonicalFile
+			if (!root.isDirectory) throw IOException("Generation store unavailable")
+			val lockFile = File(root, ".writer.lock")
+			FileChannel.open(lockFile.toPath(), StandardOpenOption.CREATE,
+				StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).use { channel ->
+				val lock = try {
+					channel.tryLock()
+				} catch (failure: OverlappingFileLockException) {
+					throw IOException("Generation writer busy", failure)
+				} ?: throw IOException("Generation writer busy")
+				lock.use {
+					return operation(root)
+				}
 			}
+		} finally {
+			writerActive.set(false)
 		}
 	}
 
