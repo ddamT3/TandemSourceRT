@@ -46,6 +46,8 @@ internal object ChartCacheManifestPersistence {
 				output.flush()
 				file.fd.sync()
 			}
+			// Apply the same structural budget as recovery before publication.
+			ChartCacheRecovery.checkedJson(ChartCacheRecovery.readMetadata(target, MAX_MANIFEST_BYTES))
 			val fingerprint = ChartCacheManifestFiles.fingerprint(target, MAX_MANIFEST_BYTES)
 			val current = ChartCacheCurrent(ChartCacheManifest.SCHEMA_VERSION,
 				manifest.generationId, fingerprint.sha256)
@@ -61,6 +63,7 @@ internal object ChartCacheManifestPersistence {
 		val bytes = json.encodeToString(current).toByteArray(Charsets.UTF_8)
 		if (bytes.size.toLong() > MAX_CURRENT_BYTES)
 			throw IOException("Current pointer size limit exceeded")
+		ChartCacheRecovery.checkedJson(bytes)
 		return bytes
 	}
 }
