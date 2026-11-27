@@ -85,4 +85,26 @@ class ChartCacheTransactionTest {
 		assertEquals(0, generations.listFiles()!!.size)
 		assertTrue(ChartCacheTransaction.withWriter(store) { true })
 	}
+
+	@Test(timeout = 30000L)
+	fun secondStoreRejectedBeforeLockFileCreation() {
+		val first = temp.newFolder()
+		val second = temp.newFolder()
+		ChartCacheTransaction.withWriter(first) {
+			rejected("Generation writer busy") {
+				ChartCacheTransaction.withWriter(second) { fail("Second writer entered") }
+			}
+			assertFalse(File(second, ".writer.lock").exists())
+		}
+		assertTrue(ChartCacheTransaction.withWriter(second) { true })
+	}
+
+	@Test(timeout = 30000L)
+	fun invalidStoreDoesNotRetainGate() {
+		val invalid = temp.newFile()
+		rejected("Generation store unavailable") {
+			ChartCacheTransaction.withWriter(invalid) { fail("Invalid store entered") }
+		}
+		assertTrue(ChartCacheTransaction.withWriter(temp.newFolder()) { true })
+	}
 }
