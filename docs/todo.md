@@ -1334,3 +1334,18 @@ Prossimo: MEM-14.3c.4 recovery e lettura limitata del puntatore/manifest,
 validazione generazione, gestione non distruttiva degli orfani.
 Restano benchmark migrazione completa, warning nullable, integrazione
 operativa e verifica Android. MEM-12 resta BLOCKED; OOM non risolto.
+
+#### MEM-14.3c.4 - VERIFIED (checkpoint confidenza 1, componenti isolati)
+
+- Recovery read-only del puntatore pubblicato, inventario limitato e fallback non distruttivo; nessuna promozione automatica orfani.
+- Gate writer JVM prima dell'apertura del lock file; test concorrenza cooperativa. Non ancora verificato su processi Android.
+- HEAD d561629c37dbc57bd7f5f5047102510e24299d5d: test mirati 30/30 (manifest 8, pubblicazione 5, transaction 6, recovery 11).
+- HEAD verificato 14ce5fdf7fd8bf69b2ba33e2f8c6ff1bb03c7129: warning nullable corretti, stessa prevalidazione strutturale JSON in scrittura e recovery.
+- Regressione offline 330 test, 328 PASS, 0 FAIL, 0 ERROR, 2 SKIP attesi (PumpEventsAdapterParityTest fixture locale e PumpPayloadDescriptorBenchmarkTest opt-in). Gradle 62 s. Primo controllo PowerShell SKIP errato per precedenza operatori; report ricontrollati con confronto corretto, PASS.
+- assembleDebug offline PASS, incrementale 4 s; APK app/build/outputs/apk/debug/TandemSourceRT.apk, 23931012 byte.
+- SHA256 654D076DFFA0CECB8583D89F0D71492D9915271B88E9A2698A470DE7F18FA1A0.
+- Output locale utente: working tree invariato, nessuna installazione APK, nessuna modifica dispositivo.
+
+Checkpoint confidenza 1 CHIUSO per test funzionali JVM e build dei componenti isolati. MEM-14.3 complessivo resta IN_PROGRESS; MEM-14.3d/e non conclusi. Nessuna evidenza di OOM risolto, MEM-12 BLOCKED.
+
+Prima dell'integrazione operativa: benchmark sintetico migrazione completa e metadati aggregati (fixture comparabile alla cache osservata, heap e tempi per fase), test mirati simmetria budget writer/recovery e guasti, compatibilita payload legacy, coordinamento lettori/writer legacy e generazioni, durabilita reale Android e lock tra processi. La rilettura manifest fino a 8 MiB su disco non implica heap limitato a 8 MiB. Test sync directory simulati, nessuna prova power loss. Preservare cache e marker legacy, nessuna deduplicazione o cancellazione automatica. Verificare poi download/merge/save e picco end-to-end prima di dichiarare risolto OOM. Nessuna installazione o migrazione reale senza autorizzazione.
