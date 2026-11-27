@@ -130,4 +130,48 @@ class ChartCacheRecoveryTest {
 			ChartCacheFallback.decide(ChartCacheRecovery.inspect(store), legacy))
 		assertEquals("synthetic", legacy.readText())
 	}
+
+	@Test(timeout = 30000L)
+	fun rejectsMalformedManifestEvenWithMatchingHash() {
+		val store = store()
+		val manifest = publish(store)
+		val file = File(store, "generations/${manifest.generationId}/manifest.json")
+		val original = file.readText()
+		val pointer = File(store, "current.json")
+		val variants = listOf(
+			original.replaceFirst("{", "{\"schemaVersion\":1,"),
+			original.dropLast(1) + ",\"extra\":" + "[".repeat(73) + "0" + "]".repeat(73) + "}",
+			original.dropLast(1) + ",\"extra\":[" + "0,".repeat(100000) + "0]}",
+			original.dropLast(1) + ",\"extra\":\"" + "a".repeat(1024 * 1024 + 1) + "\"}"
+		)
+		for (value in variants) {
+			file.writeText(value)
+			val hash = ChartCacheManifestFiles.fingerprint(file, 8L * 1024 * 1024).sha256
+			pointer.writeBytes(ChartCacheManifestPersistence.currentBytes(
+				ChartCacheCurrent(ChartCacheManifest.SCHEMA_VERSION, manifest.generationId, hash)))
+			assertSame(ChartCacheRecovery.Result.Invalid, ChartCacheRecovery.inspect(store))
+			assertEquals(value, file.readText())
+		}
+	}
+
+	@Test(timeout = 30000L)
+	fun rejectsChangedAndMissingPayload() {
+		val store = store()
+		val id = ChartCacheManifest.newGenerationId()
+		val stage = File(store, "generations/.stage-$id").apply { assertTrue(mkdir()) }
+		File(stage, "dataset.json").writeText("{}")
+		val raw = """{"events":[{"eventCode":13}],"clockChanges":null}"""
+		File(stage, "payload_0.json").writeText(raw)
+		val descriptor = PumpPayloadAccess.describe(stage, "payload_0.json", "synthetic", 1024)
+		val manifest = ChartCacheManifestFiles.build(stage, id, listOf(descriptor))
+		assertEquals(ChartCachePublication.Result.COMMITTED,
+			ChartCachePublication.publish(store, stage, manifest, syncDirectory = {}))
+		assertTrue(ChartCacheRecovery.inspect(store) is ChartCacheRecovery.Result.Published)
+		val payload = File(store, "generations/$id/payload_0.json")
+		payload.writeText(raw.replace("13", "14"))
+		assertSame(ChartCacheRecovery.Result.Invalid, ChartCacheRecovery.inspect(store))
+		assertTrue(payload.delete())
+		assertSame(ChartCacheRecovery.Result.Invalid, ChartCacheRecovery.inspect(store))
+		assertTrue(File(store, "current.json").isFile)
+	}
 }
