@@ -1349,3 +1349,16 @@ operativa e verifica Android. MEM-12 resta BLOCKED; OOM non risolto.
 Checkpoint confidenza 1 CHIUSO per test funzionali JVM e build dei componenti isolati. MEM-14.3 complessivo resta IN_PROGRESS; MEM-14.3d/e non conclusi. Nessuna evidenza di OOM risolto, MEM-12 BLOCKED.
 
 Prima dell'integrazione operativa: benchmark sintetico migrazione completa e metadati aggregati (fixture comparabile alla cache osservata, heap e tempi per fase), test mirati simmetria budget writer/recovery e guasti, compatibilita payload legacy, coordinamento lettori/writer legacy e generazioni, durabilita reale Android e lock tra processi. La rilettura manifest fino a 8 MiB su disco non implica heap limitato a 8 MiB. Test sync directory simulati, nessuna prova power loss. Preservare cache e marker legacy, nessuna deduplicazione o cancellazione automatica. Verificare poi download/merge/save e picco end-to-end prima di dichiarare risolto OOM. Nessuna installazione o migrazione reale senza autorizzazione.
+
+### CHECKPOINT 2026-11-27 - Confidenza 1
+
+Checkpoint esplicitamente richiesto, secondo docs/rules.md §2.7.
+Branch: work/pump-events-oom-sync-20261122.
+Baseline codice verificata: 14ce5fdf7fd8bf69b2ba33e2f8c6ff1bb03c7129.
+HEAD remoto precedente al checkpoint: da706ee6bb2608b84fcf65fc875ac468a276b5fa (solo documentazione rispetto alla baseline).
+Ultimo HEAD locale riportato dall'utente: 14ce5fdf7fd8bf69b2ba33e2f8c6ff1bb03c7129; working tree invariato al termine dei test. Stato locale attuale non ricontrollato, nessuna sincronizzazione implicita.
+Evidenze e hash APK: MEM-14.3c.4 sopra. Test mirati 30/30 sulla baseline precedente d561629; regressione finale 328 PASS, 2 SKIP attesi, 0 FAIL/ERROR; build debug offline PASS. Nessuna installazione o modifica dispositivo riportata. Nessun nuovo test eseguito per questo checkpoint documentale.
+
+Decisioni consolidate: JSON separato con descrittori, nessuna SQLite, deduplicazione o indice binario; migrazione non distruttiva, originali e marker legacy preservati. Confidenza 1 VERIFIED limitatamente ai componenti isolati JVM e build. MEM-14.3 IN_PROGRESS, MEM-12 BLOCKED; R2.3.3+ sospesi.
+
+Ripartenza: rileggere rules.md e todo.md, verificare branch/HEAD/remote/staging/working tree/identita locale e sincronizzare solo con autorizzazione. Prossimo task MEM-14.3d: benchmark sintetico della migrazione completa e dei metadati aggregati, con misure heap/tempi per fase e test dei limiti e guasti. Poi MEM-14.3e integrazione operativa e MEM-14.4 verifica Android autorizzata. Rischi e prerequisiti in MEM-14.3c.4. Non dichiarare OOM risolto, non installare, cancellare cache, incrementare versione o rilasciare implicitamente.
