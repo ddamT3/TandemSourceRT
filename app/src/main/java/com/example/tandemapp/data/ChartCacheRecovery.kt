@@ -51,7 +51,7 @@ internal object ChartCacheRecovery {
 	}
 
 	/** Preflight without constructing a JSON tree; limits are provisional. */
-	private fun checkedJson(bytes: ByteArray): String {
+	internal fun checkedJson(bytes: ByteArray): String {
 		val text = bytes.decodeToString(throwOnInvalidSequence = true)
 		JsonReader(PumpPayloadStreamParser.BoundedJsonReader(StringReader(text), 1024 * 1024)).use { reader ->
 			reader.isLenient = false
@@ -92,7 +92,7 @@ internal object ChartCacheRecovery {
 		return text
 	}
 
-	private fun readMetadata(file: File, maximum: Long): ByteArray {
+	internal fun readMetadata(file: File, maximum: Long): ByteArray {
 		if (file.canonicalFile != file || !file.isFile)
 			throw IOException("Metadata unavailable")
 		val size = file.length()
