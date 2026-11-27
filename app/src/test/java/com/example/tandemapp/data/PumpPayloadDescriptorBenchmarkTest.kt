@@ -54,9 +54,9 @@ class PumpPayloadDescriptorBenchmarkTest {
 		assumeTrue(count != null)
 		val events = requireNotNull(count)
 		require(events in listOf(10000, 100000, 1000000))
-		val limit = System.getProperty("tandem.benchmark.maxHeapMiB").toLong()
+		val limit = requireNotNull(System.getProperty("tandem.benchmark.maxHeapMiB")).toLong()
 		assertTrue(runtime.maxMemory() <= limit * 1048576L)
-		val directory = File(System.getProperty("tandem.descriptor.directory")).canonicalFile
+		val directory = File(requireNotNull(System.getProperty("tandem.descriptor.directory"))).canonicalFile
 		require(directory.isDirectory)
 		val file = File(directory, "synthetic-descriptor.json")
 		assertTrue(file.createNewFile())
