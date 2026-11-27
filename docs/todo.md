@@ -1362,3 +1362,12 @@ Evidenze e hash APK: MEM-14.3c.4 sopra. Test mirati 30/30 sulla baseline precede
 Decisioni consolidate: JSON separato con descrittori, nessuna SQLite, deduplicazione o indice binario; migrazione non distruttiva, originali e marker legacy preservati. Confidenza 1 VERIFIED limitatamente ai componenti isolati JVM e build. MEM-14.3 IN_PROGRESS, MEM-12 BLOCKED; R2.3.3+ sospesi.
 
 Ripartenza: rileggere rules.md e todo.md, verificare branch/HEAD/remote/staging/working tree/identita locale e sincronizzare solo con autorizzazione. Prossimo task MEM-14.3d: benchmark sintetico della migrazione completa e dei metadati aggregati, con misure heap/tempi per fase e test dei limiti e guasti. Poi MEM-14.3e integrazione operativa e MEM-14.4 verifica Android autorizzata. Rischi e prerequisiti in MEM-14.3c.4. Non dichiarare OOM risolto, non installare, cancellare cache, incrementare versione o rilasciare implicitamente.
+
+### MEM-14.3d.1/d.2 - VERIFIED (2026-11-27)
+
+Benchmark sintetico opt-in LegacyCacheMigrationBenchmarkTest, baseline 7da25329b41df39ffae6bb39f87be47b27ade127. Matrice 12/12 PASS, 0 FAIL, integrita PASS, working tree invariato, nessuna modifica dispositivo. Picco heap campionato MiB / somma tempi fasi ms, heap JVM 384/128/64/32 MiB:
+- SMALL: 2 payload, 10000 eventi, 500 CGM, 3013666 byte: 84.41/649.41; 81.47/598.45; 44.73/588.47; 24.65/579.89.
+- REPRESENTATIVE: 17 payload, 187484 eventi, 9849 CGM, 56741230 byte: 237.36/7228.85; 87.39/7085.13; 49.57/6758.98; 27.92/7265.82.
+- STRESS: 32 payload, 500000 eventi, 25000 CGM, 150957318 byte: 237.37/18229.12; 97.24/18444.62; 58.40/18736.11; 31.56/18335.29.
+
+Obiettivo sperimentale 64 e 32 MiB raggiunto; stress 32 MiB con margine campionato di soli 0.44 MiB. JVM desktop, campionamento non limite assoluto, generazione fixture esclusa dalle misure ma allocazioni residue possibili. Prepare accorpa estrazione e validazione; sync directory simulato, file sync e rename effettivi. Fixture rappresentativa piu piccola della cache reale, serie accessorie vuote e clockChanges nulli. Nessuna prova Android o integrazione download/merge/save. MEM-14.3d.3 IN_PROGRESS: stress metadati aggregati per byte e nodi, simmetria writer/recovery, rifiuto non distruttivo e compatibilita legacy. MEM-14.3 IN_PROGRESS, MEM-12 BLOCKED.
